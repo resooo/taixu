@@ -21,6 +21,8 @@ import top.wkbin.taixu.runtime.shell.CommandResult
 import top.wkbin.taixu.runtime.shell.ShellCommand
 import top.wkbin.taixu.runtime.shell.ManagedProcess
 import top.wkbin.taixu.runtime.bridge.adb.EmbeddedAdbManager
+import top.wkbin.taixu.runtime.privilege.PrivilegeManager
+import top.wkbin.taixu.runtime.privilege.ShellExecResult
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -40,10 +42,12 @@ class DeveloperViewModel(
     private val toolManager: ToolManager,
     private val logger: AppLogger,
     private val embeddedAdbManager: EmbeddedAdbManager,
+    private val privilegeManager: PrivilegeManager,
 ) : ViewModel() {
 
     init {
         embeddedAdbManager.startDiscovery(EmbeddedAdbManager.TAG_DEVELOPER_UI)
+        refreshWirelessAdbState()
     }
 
     override fun onCleared() {
@@ -92,6 +96,18 @@ class DeveloperViewModel(
     val adbBusy: StateFlow<Boolean> = _adbBusy.asStateFlow()
     private val _adbMessage = MutableStateFlow<String?>(null)
     val adbMessage: StateFlow<String?> = _adbMessage.asStateFlow()
+
+    /** 是否已持有 WRITE_SECURE_SETTINGS（点火完成后为 true）。 */
+    private val _secureSettingsGranted = MutableStateFlow(false)
+    val secureSettingsGranted: StateFlow<Boolean> = _secureSettingsGranted.asStateFlow()
+
+    /** 系统无线调试开关状态。 */
+    private val _wirelessAdbEnabled = MutableStateFlow(false)
+    val wirelessAdbEnabled: StateFlow<Boolean> = _wirelessAdbEnabled.asStateFlow()
+
+    /** 无线调试相关状态文案，供 UI 展示。 */
+    private val _wirelessAdbStatus = MutableStateFlow<String?>(null)
+    val wirelessAdbStatus: StateFlow<String?> = _wirelessAdbStatus.asStateFlow()
     private val _logcatOutput = MutableStateFlow("")
     val logcatOutput: StateFlow<String> = _logcatOutput.asStateFlow()
 
@@ -135,6 +151,80 @@ class DeveloperViewModel(
     fun restartAdbDiscovery() {
         embeddedAdbManager.restartDiscovery()
         _adbMessage.value = "已重新启动 mDNS 端口探测。"
+    }
+
+    // ── 无线调试自持（一次性 pm grant 点火） ────────────────────────────────
+
+    /** 只读刷新授权与开关状态，用于页面初始化与徽标展示。 */
+    fun refreshWirelessAdbState() {
+        _secureSettingsGranted.value = privilegeManager.hasSecureSettingsPermission()
+        viewModelScope.launch {
+            runCatching { privilegeManager.readWirelessAdbState() }
+                .onSuccess { result ->
+                    _wirelessAdbEnabled.value = result.wirelessEnabled
+                    _wirelessAdbStatus.value = result.message
+                }
+                .onFailure { _wirelessAdbStatus.value = it.message ?: "无法读取无线调试状态" }
+        }
+    }
+
+    /**
+     * 一次性点火：经当前已连接的无线 ADB 通道执行 pm grant，
+     * 把 WRITE_SECURE_SETTINGS 授予太墟自身，此后即可自行开关无线调试。
+     */
+    fun enableSecureSettings() {
+        if (_adbBusy.value) return
+        viewModelScope.launch {
+            _adbBusy.value = true
+            _adbMessage.value = "正在通过 ADB 通道授权系统设置写入权限…"
+
+            val result = privilegeManager.grantSecureSettingsViaAdb { command ->
+                val outcome = embeddedAdbManager.executeShell(command)
+                ShellExecResult(
+                    success = outcome.exitCode == 0,
+                    exitCode = outcome.exitCode ?: -1,
+                    stdout = outcome.output,
+                    stderr = "",
+                )
+            }
+
+            _secureSettingsGranted.value = result.granted
+            _adbMessage.value = result.message
+            if (result.granted) refreshWirelessAdbState()
+            _adbBusy.value = false
+        }
+    }
+
+    /**
+     * 自动开始无线调试：开启开关 → 10 秒内等待 mDNS 发现端口 → 自动连接。
+     * 已点火时完全依靠自身权限，不再需要 Shizuku。
+     */
+    fun autoStartWirelessAdb() {
+        if (_adbBusy.value) return
+        viewModelScope.launch {
+            _adbBusy.value = true
+            _adbMessage.value = "正在自动开启无线调试并探测端口…"
+
+            val canSelfHeld = privilegeManager.hasSecureSettingsPermission()
+            val result = embeddedAdbManager.ensureWirelessAdbReady(
+                enableSwitch = if (canSelfHeld) {
+                    { privilegeManager.enableWirelessAdbSelfHeld().wirelessEnabled }
+                } else {
+                    null
+                },
+            )
+
+            _adbMessage.value = result.fold(
+                onSuccess = {
+                    _wirelessAdbEnabled.value = true
+                    _wirelessAdbStatus.value = "无线调试已自动开启并完成连接。"
+                    "无线调试已自动开启并完成连接。"
+                },
+                onFailure = { error -> error.message ?: "自动开始无线调试失败" },
+            )
+            _adbBusy.value = false
+            refreshWirelessAdbState()
+        }
     }
 
     fun captureLogcat(packageName: String, tag: String, priority: Char, keyword: String, lines: Int) {

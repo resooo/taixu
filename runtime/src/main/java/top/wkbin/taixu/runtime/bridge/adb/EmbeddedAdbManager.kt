@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -364,6 +365,57 @@ class EmbeddedAdbManager(
         }
     }
 
+    /**
+     * 自动开始无线调试：开启开关 → 10 秒内等待 mDNS 发现端口 → 自动连接。
+     *
+     * 「10 秒内自动开启无线调试并发现正确端口」的实现主体：
+     * 1. 已连接时直接返回；
+     * 2. 启动 mDNS 发现，并先尝试立即连接（端口可能已存在）；
+     * 3. 端口缺失时调用 [enableSwitch]（由上层注入，通常是 PrivilegeManager 的自持写入）；
+     * 4. 在 [AUTO_START_TIMEOUT_MS] 窗口内轮询等待端口出现，出现即连接。
+     *
+     * @param enableSwitch 开启系统开关的动作；null 表示仅等待已有端口，不主动开关。
+     */
+    suspend fun ensureWirelessAdbReady(
+        enableSwitch: (suspend () -> Boolean)? = null,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        if (_state.value is ConnectionState.Connected) return@withContext Result.success(Unit)
+
+        startDiscovery()
+
+        // 端口可能已经存在：先直接试一次，命中则通常 < 1 秒完成。
+        if (connectEndpointMap.isNotEmpty()) {
+            val immediate = connect()
+            if (immediate.isSuccess) return@withContext immediate
+        }
+
+        // 端口缺失时触发开关动作（自持写入 Settings.Global）。
+        if (enableSwitch != null) {
+            val switched = runCatching { enableSwitch() }.getOrDefault(false)
+            Log.i(TAG, "ensureWirelessAdbReady: enableSwitch=$switched")
+        }
+
+        // 在 10 秒窗口内等待系统广播端口。
+        val endpoint = withTimeoutOrNull(AUTO_START_TIMEOUT_MS) {
+            while (true) {
+                connectEndpointMap.values.firstOrNull()?.let { return@withTimeoutOrNull it }
+                delay(AUTO_START_POLL_MS)
+            }
+            @Suppress("UNREACHABLE_CODE") null
+        }
+
+        if (endpoint == null) {
+            val message = "10 秒内未发现无线调试端口。请确认「无线调试」已开启；刚开启时系统广播端口可能稍有延迟。"
+            _state.value = ConnectionState.Failed(message)
+            return@withContext Result.failure(IllegalStateException(message))
+        }
+
+        connectTo(endpoint)
+        val ok = _state.value is ConnectionState.Connected
+        if (ok) Result.success(Unit)
+        else Result.failure(IllegalStateException("端口已发现（${endpoint.port}），但连接失败，请重试。"))
+    }
+
     private fun connectTo(endpoint: Endpoint) {
         closeClient()
         _state.value = ConnectionState.Connecting
@@ -567,6 +619,11 @@ class EmbeddedAdbManager(
         const val CONNECT_DISCOVERY_TIMEOUT_MS = 10_000L
         const val RESOLVE_TIMEOUT_MS = 8_000L
         const val MAX_LOG_LINES = 5_000
+
+        /** 「自动开始无线调试」总窗口：从触发开关到端口可用不超过 10 秒。 */
+        const val AUTO_START_TIMEOUT_MS = 10_000L
+        /** 等待端口期间的轮询间隔。 */
+        const val AUTO_START_POLL_MS = 250L
 
         /** shell 输出字符硬上限（与 harness ToolExecutor.MAX_HOST_OUTPUT_CHARS 同值，防 Java 堆 OOM）。 */
         const val MAX_SHELL_OUTPUT_CHARS = 200_000

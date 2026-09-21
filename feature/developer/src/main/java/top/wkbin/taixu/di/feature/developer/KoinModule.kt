@@ -18,6 +18,7 @@ val featureDeveloperModule = module {
             toolManager = get(),
             logger = get(),
             embeddedAdbManager = get(),
+            privilegeManager = get(),
         )
     }
 }
