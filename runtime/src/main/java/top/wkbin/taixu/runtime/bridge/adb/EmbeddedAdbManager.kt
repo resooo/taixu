@@ -410,10 +410,18 @@ class EmbeddedAdbManager(
             return@withContext Result.failure(IllegalStateException(message))
         }
 
-        connectTo(endpoint)
-        val ok = _state.value is ConnectionState.Connected
-        if (ok) Result.success(Unit)
-        else Result.failure(IllegalStateException("端口已发现（${endpoint.port}），但连接失败，请重试。"))
+        // connectTo 在连接失败时会主动 throw（末尾 `throw lastError`），
+        // 这里必须就地捕获，否则异常会经 withContext/协程冒泡到主线程导致崩溃。
+        val connectResult = runCatching { connectTo(endpoint) }
+        if (connectResult.isSuccess && _state.value is ConnectionState.Connected) {
+            return@withContext Result.success(Unit)
+        }
+
+        val failure = connectResult.exceptionOrNull()
+        val message = failure?.message?.takeIf { it.isNotBlank() }
+            ?: "端口已发现（${endpoint.port}），但连接失败，请确认无线调试已开启后重试。"
+        _state.value = ConnectionState.Failed(message)
+        Result.failure(failure ?: IllegalStateException(message))
     }
 
     private fun connectTo(endpoint: Endpoint) {

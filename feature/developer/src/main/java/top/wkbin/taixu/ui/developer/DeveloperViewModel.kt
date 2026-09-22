@@ -157,7 +157,9 @@ class DeveloperViewModel(
 
     /** 只读刷新授权与开关状态，用于页面初始化与徽标展示。 */
     fun refreshWirelessAdbState() {
-        _secureSettingsGranted.value = privilegeManager.hasSecureSettingsPermission()
+        _secureSettingsGranted.value = runCatching {
+            privilegeManager.hasSecureSettingsPermission()
+        }.getOrDefault(false)
         viewModelScope.launch {
             runCatching { privilegeManager.readWirelessAdbState() }
                 .onSuccess { result ->
@@ -178,19 +180,29 @@ class DeveloperViewModel(
             _adbBusy.value = true
             _adbMessage.value = "正在通过 ADB 通道授权系统设置写入权限…"
 
-            val result = privilegeManager.grantSecureSettingsViaAdb { command ->
-                val outcome = embeddedAdbManager.executeShell(command)
-                ShellExecResult(
-                    success = outcome.exitCode == 0,
-                    exitCode = outcome.exitCode ?: -1,
-                    stdout = outcome.output,
-                    stderr = "",
-                )
-            }
+            // 兜底：ADB 通道可能断开或抛异常，避免冒泡到主线程导致闪退。
+            val message = runCatching {
+                privilegeManager.grantSecureSettingsViaAdb { command ->
+                    val outcome = embeddedAdbManager.executeShell(command)
+                    ShellExecResult(
+                        success = outcome.exitCode == 0,
+                        exitCode = outcome.exitCode ?: -1,
+                        stdout = outcome.output,
+                        stderr = "",
+                    )
+                }
+            }.fold(
+                onSuccess = { result ->
+                    _secureSettingsGranted.value = result.granted
+                    if (result.granted) refreshWirelessAdbState()
+                    result.message
+                },
+                onFailure = { error ->
+                    error.message?.takeIf { it.isNotBlank() } ?: "授权失败：未知错误"
+                },
+            )
 
-            _secureSettingsGranted.value = result.granted
-            _adbMessage.value = result.message
-            if (result.granted) refreshWirelessAdbState()
+            _adbMessage.value = message
             _adbBusy.value = false
         }
     }
@@ -205,23 +217,36 @@ class DeveloperViewModel(
             _adbBusy.value = true
             _adbMessage.value = "正在自动开启无线调试并探测端口…"
 
-            val canSelfHeld = privilegeManager.hasSecureSettingsPermission()
-            val result = embeddedAdbManager.ensureWirelessAdbReady(
-                enableSwitch = if (canSelfHeld) {
-                    { privilegeManager.enableWirelessAdbSelfHeld().wirelessEnabled }
-                } else {
-                    null
+            // 兜底：无线 ADB 连接链路涉及 socket / mDNS / 系统设置写入，
+            // 任一步失败都可能抛异常；用 runCatching 包裹确保不冒泡到主线程导致闪退。
+            val message = runCatching {
+                val canSelfHeld = privilegeManager.hasSecureSettingsPermission()
+                embeddedAdbManager.ensureWirelessAdbReady(
+                    enableSwitch = if (canSelfHeld) {
+                        { privilegeManager.enableWirelessAdbSelfHeld().wirelessEnabled }
+                    } else {
+                        null
+                    },
+                )
+            }.fold(
+                onSuccess = { result ->
+                    result.fold(
+                        onSuccess = {
+                            _wirelessAdbEnabled.value = true
+                            _wirelessAdbStatus.value = "无线调试已自动开启并完成连接。"
+                            "无线调试已自动开启并完成连接。"
+                        },
+                        onFailure = { error ->
+                            error.message?.takeIf { it.isNotBlank() } ?: "自动开始无线调试失败"
+                        },
+                    )
+                },
+                onFailure = { error ->
+                    error.message?.takeIf { it.isNotBlank() } ?: "自动开始无线调试失败：未知错误"
                 },
             )
 
-            _adbMessage.value = result.fold(
-                onSuccess = {
-                    _wirelessAdbEnabled.value = true
-                    _wirelessAdbStatus.value = "无线调试已自动开启并完成连接。"
-                    "无线调试已自动开启并完成连接。"
-                },
-                onFailure = { error -> error.message ?: "自动开始无线调试失败" },
-            )
+            _adbMessage.value = message
             _adbBusy.value = false
             refreshWirelessAdbState()
         }
