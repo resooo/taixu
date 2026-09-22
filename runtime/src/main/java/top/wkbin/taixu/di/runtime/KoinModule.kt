@@ -166,11 +166,24 @@ val runtimeModule = module {
     }
 
     single<EmbeddedAdbManager> {
-        EmbeddedAdbManager(
+        val manager = EmbeddedAdbManager(
             context = get(),
             preferences = get(),
             pathManager = get(),
         )
+        // 【按需自动开启无线调试】把 PrivilegeManager 的自持开关接到 ADB 管理器上。
+        // 这样任何 ADB 调用（HostBridge 的 shell/logcat、构建后 installApk 等）
+        // 在发现未连接时，都会自动尝试开启无线调试并重连，无需用户手动点按钮。
+        // 采用属性注入而非构造参数，避免模块间循环依赖；get() 在 lambda 内惰性解析。
+        manager.autoEnableHook = {
+            val privilegeManager = get<PrivilegeManager>()
+            if (!privilegeManager.hasSecureSettingsPermission()) {
+                false
+            } else {
+                privilegeManager.enableWirelessAdbSelfHeld().wirelessEnabled
+            }
+        }
+        manager
     }
 
     single<WorkshopSigningManager> {
