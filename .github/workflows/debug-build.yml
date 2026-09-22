@@ -1,0 +1,52 @@
+name: Build TaiXu Debug APK
+
+# 与 taixudev-build.yml 的区别：不设置 TAIXU_DEV_BUILD，
+# 因此产出包名为 top.wkbin.taixu.debug（而非 .dev），
+# 可避开部分 OEM（如一加/OPPO）对 .dev 后缀的安装拦截。
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Identify and Rename Output APK
+        run: |
+          mkdir -p output
+          APK_PATH=$(find app/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -n "$APK_PATH" ]; then
+            cp "$APK_PATH" output/TaiXu-debug.apk
+            sha256sum output/TaiXu-debug.apk > output/TaiXu-debug.apk.sha256
+            echo "APK ready: output/TaiXu-debug.apk"
+          else
+            echo "::error::No APK found"
+            exit 1
+          fi
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: taixu-debug-apk
+          path: output/*
+          retention-days: 7
