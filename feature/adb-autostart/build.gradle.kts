@@ -24,6 +24,7 @@ dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:model"))
     implementation(project(":core:datastore"))
+    implementation(libs.androidx.datastore.preferences)
     implementation(project(":runtime"))
     implementation(project(":feature:components"))
     implementation(platform(libs.androidx.compose.bom))
