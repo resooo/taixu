@@ -32,14 +32,6 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
-    <!-- 【自持无线调试】写入 Settings.Global（adb_wifi_enabled 等）所需。
-         该权限为 signature|privileged|development 级别，可经 `pm grant` 一次性授予：
-         用户首次在「无线 ADB 与日志抓取」页完成配对连接后，点按钮经 ADB 通道执行
-         pm grant <包名> android.permission.WRITE_SECURE_SETTINGS 即可点火，
-         此后太墟无需任何外部依赖即可自行开关无线调试。 -->
-    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
-        tools:ignore="ProtectedPermissions" />
-
     <!-- Android 11+ 包可见性：允许解析 Shizuku App 与 QQ（授权弹窗、群卡片调起与 Binder 交互） -->
     <queries>
         <package android:name="moe.shizuku.privileged.api" />
@@ -63,6 +55,7 @@
         android:largeHeap="true"
         android:localeConfig="@xml/taixu_locales_config"
         android:networkSecurityConfig="@xml/taixu_network_security_config"
+        android:requestLegacyExternalStorage="true"
         android:supportsRtl="true"
         android:theme="@style/taixu_theme">
         <activity

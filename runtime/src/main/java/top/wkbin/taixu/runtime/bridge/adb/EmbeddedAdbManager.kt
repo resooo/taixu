@@ -366,133 +366,16 @@ class EmbeddedAdbManager(
     }
 
     /**
-     * 自动开启无线调试的注入钩子。
+     * 【扩展点】按需开启无线调试的注入钩子。
      *
-     * 由 Koin 装配层接上 PrivilegeManager（runtime 层不反向依赖权限模块，保持解耦）。
-     * 返回 true 表示系统开关已开启，调用方随后会重试一次连接。
+     * 默认 null（行为与上游完全一致）。由外部模块在启动时挂载实现，
+     * 挂载后任何 ADB 操作在未连接时会自动尝试开启无线调试。
+     *
+     * 上游只需保留本字段与 executeShell / installApk 中的两行调用，
+     * 全部业务逻辑位于 feature/adb-autostart 模块，避免上游更新时产生冲突。
      */
     @Volatile
     var autoEnableHook: (suspend () -> Boolean)? = null
-
-    /** 上次尝试自动开启的时间戳，用于频控（避免每次调用都徒劳重试）。 */
-    @Volatile
-    private var lastAutoEnableAt: Long = 0L
-
-    /**
-     * 按需自动开启无线调试：仅在距上次尝试超过 [AUTO_ENABLE_COOLDOWN_MS] 时才执行，
-     * 避免短时间内反复触发（例如连续多次 ADB 调用全部失败）。
-     */
-    private suspend fun tryAutoEnableWirelessAdb(): Boolean {
-        val hook = autoEnableHook ?: return false
-        val now = System.currentTimeMillis()
-        if (now - lastAutoEnableAt < AUTO_ENABLE_COOLDOWN_MS) {
-            Log.i(TAG, "tryAutoEnableWirelessAdb: 频控中，跳过（${now - lastAutoEnableAt}ms）")
-            return false
-        }
-        lastAutoEnableAt = now
-        val enabled = runCatching { hook() }.getOrDefault(false)
-        Log.i(TAG, "tryAutoEnableWirelessAdb: hook 返回 $enabled")
-        return enabled
-    }
-
-    /**
-     * 确保 ADB 可用：已连接直接返回；否则先尝试连接，失败则自动开启无线调试后重试一次。
-     *
-     * 这是「检测到需要无线调试时自动开始」的统一入口，由 executeShell / captureLogcat /
-     * installApk 等所有 ADB 调用点复用。
-     */
-    private suspend fun ensureConnectedOrAutoEnable(explicitPort: Int? = null): Result<Unit> {
-        val currentClient = client
-        val currentPort = (_state.value as? ConnectionState.Connected)?.port
-        if (currentClient != null && (explicitPort == null || currentPort == explicitPort)) {
-            return Result.success(Unit)
-        }
-
-        val first = if (explicitPort != null) connect(explicitPort) else connect()
-        if (first.isSuccess) return first
-
-        // 首次连接失败 → 尝试自动开启无线调试（自持权限写系统开关）。
-        if (!tryAutoEnableWirelessAdb()) return first
-
-        // 开关已开启，等待系统广播 mDNS 端口并重连（上限 AUTO_ENABLE_RETRY_TIMEOUT_MS）。
-        startDiscovery()
-        val endpoint = withTimeoutOrNull(AUTO_ENABLE_RETRY_TIMEOUT_MS) {
-            while (true) {
-                connectEndpointMap.values.firstOrNull()?.let { return@withTimeoutOrNull it }
-                delay(AUTO_START_POLL_MS)
-            }
-            @Suppress("UNREACHABLE_CODE") null
-        }
-
-        return if (endpoint == null) {
-            val message = "已自动开启无线调试，但 ${AUTO_ENABLE_RETRY_TIMEOUT_MS / 1000} 秒内未发现端口，请稍后重试。"
-            _state.value = ConnectionState.Failed(message)
-            Result.failure(IllegalStateException(message))
-        } else {
-            val retry = runCatching { connectTo(endpoint) }
-            if (retry.isSuccess && _state.value is ConnectionState.Connected) Result.success(Unit)
-            else retry.map { }
-        }
-    }
-
-    /**
-     * 自动开始无线调试：开启开关 → 10 秒内等待 mDNS 发现端口 → 自动连接。
-     *
-     * 「10 秒内自动开启无线调试并发现正确端口」的实现主体：
-     * 1. 已连接时直接返回；
-     * 2. 启动 mDNS 发现，并先尝试立即连接（端口可能已存在）；
-     * 3. 端口缺失时调用 [enableSwitch]（由上层注入，通常是 PrivilegeManager 的自持写入）；
-     * 4. 在 [AUTO_START_TIMEOUT_MS] 窗口内轮询等待端口出现，出现即连接。
-     *
-     * @param enableSwitch 开启系统开关的动作；null 表示仅等待已有端口，不主动开关。
-     */
-    suspend fun ensureWirelessAdbReady(
-        enableSwitch: (suspend () -> Boolean)? = null,
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        if (_state.value is ConnectionState.Connected) return@withContext Result.success(Unit)
-
-        startDiscovery()
-
-        // 端口可能已经存在：先直接试一次，命中则通常 < 1 秒完成。
-        if (connectEndpointMap.isNotEmpty()) {
-            val immediate = connect()
-            if (immediate.isSuccess) return@withContext immediate
-        }
-
-        // 端口缺失时触发开关动作（自持写入 Settings.Global）。
-        if (enableSwitch != null) {
-            val switched = runCatching { enableSwitch() }.getOrDefault(false)
-            Log.i(TAG, "ensureWirelessAdbReady: enableSwitch=$switched")
-        }
-
-        // 在 10 秒窗口内等待系统广播端口。
-        val endpoint = withTimeoutOrNull(AUTO_START_TIMEOUT_MS) {
-            while (true) {
-                connectEndpointMap.values.firstOrNull()?.let { return@withTimeoutOrNull it }
-                delay(AUTO_START_POLL_MS)
-            }
-            @Suppress("UNREACHABLE_CODE") null
-        }
-
-        if (endpoint == null) {
-            val message = "10 秒内未发现无线调试端口。请确认「无线调试」已开启；刚开启时系统广播端口可能稍有延迟。"
-            _state.value = ConnectionState.Failed(message)
-            return@withContext Result.failure(IllegalStateException(message))
-        }
-
-        // connectTo 在连接失败时会主动 throw（末尾 `throw lastError`），
-        // 这里必须就地捕获，否则异常会经 withContext/协程冒泡到主线程导致崩溃。
-        val connectResult = runCatching { connectTo(endpoint) }
-        if (connectResult.isSuccess && _state.value is ConnectionState.Connected) {
-            return@withContext Result.success(Unit)
-        }
-
-        val failure = connectResult.exceptionOrNull()
-        val message = failure?.message?.takeIf { it.isNotBlank() }
-            ?: "端口已发现（${endpoint.port}），但连接失败，请确认无线调试已开启后重试。"
-        _state.value = ConnectionState.Failed(message)
-        Result.failure(failure ?: IllegalStateException(message))
-    }
 
     private fun connectTo(endpoint: Endpoint) {
         closeClient()
@@ -566,14 +449,20 @@ class EmbeddedAdbManager(
     // ── Shell / Logcat ───────────────────────────────────────────────────────
 
     suspend fun executeShell(command: String, explicitPort: Int? = null): ShellOutcome {
-        // 统一入口：未连接时先尝试连接，失败则自动开启无线调试并重连。
-        val connection = ensureConnectedOrAutoEnable(explicitPort)
-        if (connection.isFailure) {
-            return ShellOutcome(
-                null,
-                connection.exceptionOrNull()?.userMessage("内置 ADB 未就绪").orEmpty(),
-                false,
-            )
+        // 【扩展点】未连接时先请外部注入的钩子按需开启无线调试（默认空实现，行为与上游一致）。
+        runCatching { autoEnableHook?.invoke() }
+
+        val currentClient = client
+        val currentConnectedPort = (_state.value as? ConnectionState.Connected)?.port
+        if (currentClient == null || (explicitPort != null && currentConnectedPort != explicitPort)) {
+            val connection = if (explicitPort != null) connect(explicitPort) else connect()
+            if (connection.isFailure) {
+                return ShellOutcome(
+                    null,
+                    connection.exceptionOrNull()?.userMessage("内置 ADB 未就绪").orEmpty(),
+                    false,
+                )
+            }
         }
         return mutex.withLock {
             withContext(Dispatchers.IO) {
@@ -632,15 +521,8 @@ class EmbeddedAdbManager(
     suspend fun installApk(apk: File): Result<String> = mutex.withLock {
         withContext(Dispatchers.IO) {
             runCatching {
-                // 构建完成后自动安装的典型场景：此时用户不在设置页，
-                // 若未连接则自动开启无线调试并重连，无需手动干预。
-                val connection = ensureConnectedOrAutoEnable()
-                if (connection.isFailure) {
-                    error(
-                        connection.exceptionOrNull()?.message
-                            ?: "内置 ADB 未连接，请先开启无线调试并完成配对",
-                    )
-                }
+                // 【扩展点】未连接时先请外部注入的钩子按需开启无线调试（默认空实现）。
+                autoEnableHook?.invoke()
                 val current = client ?: error("内置 ADB 未连接，请先开启无线调试并完成配对")
                 current.install(apk)
                 "安装成功"
@@ -703,15 +585,6 @@ class EmbeddedAdbManager(
         const val CONNECT_DISCOVERY_TIMEOUT_MS = 10_000L
         const val RESOLVE_TIMEOUT_MS = 8_000L
         const val MAX_LOG_LINES = 5_000
-
-        /** 「自动开始无线调试」总窗口：从触发开关到端口可用不超过 10 秒。 */
-        const val AUTO_START_TIMEOUT_MS = 10_000L
-        /** 等待端口期间的轮询间隔。 */
-        const val AUTO_START_POLL_MS = 250L
-        /** 自动开启的频控窗口：60 秒内最多触发一次，避免连续 ADB 调用反复徒劳重试。 */
-        const val AUTO_ENABLE_COOLDOWN_MS = 60_000L
-        /** 自动开启后等待 mDNS 广播端口并重连的上限。 */
-        const val AUTO_ENABLE_RETRY_TIMEOUT_MS = 10_000L
 
         /** shell 输出字符硬上限（与 harness ToolExecutor.MAX_HOST_OUTPUT_CHARS 同值，防 Java 堆 OOM）。 */
         const val MAX_SHELL_OUTPUT_CHARS = 200_000

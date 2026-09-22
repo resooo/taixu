@@ -42,6 +42,7 @@ dependencies {
     implementation(project(":feature:workflow"))
     implementation(project(":feature:settings"))
     implementation(project(":feature:developer"))
+    implementation(project(":feature:adb-autostart"))
     implementation(project(":feature:custom_iteration"))
     implementation(project(":feature:browser"))
     implementation(project(":feature:git"))

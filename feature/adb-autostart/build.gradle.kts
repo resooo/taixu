@@ -5,8 +5,8 @@ plugins {
 }
 
 android {
-    namespace = "top.wkbin.taixu.feature.developer"
-    resourcePrefix = "developer_"
+    namespace = "top.wkbin.taixu.feature.adbautostart"
+    resourcePrefix = "adb_autostart_"
     compileSdk = 37
     defaultConfig { minSdk = 29 }
     buildFeatures { compose = true }
@@ -23,6 +23,9 @@ kotlin {
 dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:model"))
+    implementation(project(":core:datastore"))
+    implementation(project(":runtime"))
+    implementation(project(":feature:components"))
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
@@ -31,11 +34,5 @@ dependencies {
     implementation(libs.koin.compose.viewmodel)
     implementation(libs.koin.android)
     implementation(libs.kotlinx.coroutines.core)
-    implementation(project(":feature:components"))
-    implementation(project(":core:database"))
-    implementation(project(":core:datastore"))
-    implementation(project(":tools"))
-    implementation(project(":runtime"))
-    implementation(project(":feature:adb-autostart"))
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -1,6 +1,7 @@
 package top.wkbin.taixu.di.feature.navigation
 
 import org.koin.dsl.module
+import top.wkbin.taixu.di.feature.adbautostart.featureAdbAutostartModule
 import top.wkbin.taixu.di.feature.browser.featureBrowserModule
 import top.wkbin.taixu.di.feature.chat.featureChatModule
 import top.wkbin.taixu.di.feature.custom.iteration.featureCustomIterationModule
@@ -15,6 +16,7 @@ import top.wkbin.taixu.di.feature.workspace.featureWorkspaceModule
 /** Feature composition stays at the navigation boundary. */
 val navigationModule = module {
     includes(
+        featureAdbAutostartModule,
         featureBrowserModule,
         featureChatModule,
         featureCustomIterationModule,

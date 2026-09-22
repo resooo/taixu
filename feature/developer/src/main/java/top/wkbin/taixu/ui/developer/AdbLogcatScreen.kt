@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import top.wkbin.taixu.feature.adbautostart.AdbAutostartSection
 import top.wkbin.taixu.runtime.bridge.adb.EmbeddedAdbManager
 import top.wkbin.taixu.ui.components.IconTile
 import top.wkbin.taixu.ui.components.NoticeBanner
@@ -71,9 +72,6 @@ fun AdbLogcatScreen(
     val adbMessage by viewModel.adbMessage.collectAsStateWithLifecycle()
     val logcatOutput by viewModel.logcatOutput.collectAsStateWithLifecycle()
     val adbNotificationEnabled by viewModel.adbNotificationEnabled.collectAsStateWithLifecycle()
-    val secureSettingsGranted by viewModel.secureSettingsGranted.collectAsStateWithLifecycle()
-    val wirelessAdbEnabled by viewModel.wirelessAdbEnabled.collectAsStateWithLifecycle()
-    val wirelessAdbStatus by viewModel.wirelessAdbStatus.collectAsStateWithLifecycle()
 
     var pairingCode by rememberSaveable { mutableStateOf("") }
     var explicitPort by rememberSaveable { mutableStateOf("") }
@@ -189,72 +187,8 @@ fun AdbLogcatScreen(
                 }
             }
 
-            // ── 1.5 无线调试自持（一次性点火 + 自动开启） ────────────────────
-            SectionHeader("自动无线调试", "一次性授权后，太墟可自行开关无线调试，无需 Shizuku 或手动进开发者选项")
-            RuntimeCard(Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    IconTile(
-                        icon = RuntimeIconName.Link,
-                        color = if (wirelessAdbEnabled) {
-                            MaterialTheme.colorScheme.secondary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text("无线调试状态", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            wirelessAdbStatus ?: "尚未检测",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    StatusBadge(
-                        text = when {
-                            wirelessAdbEnabled -> "已开启"
-                            secureSettingsGranted -> "已授权"
-                            else -> "未授权"
-                        },
-                        color = when {
-                            wirelessAdbEnabled -> MaterialTheme.colorScheme.secondary
-                            secureSettingsGranted -> MaterialTheme.colorScheme.primary
-                            else -> MaterialTheme.colorScheme.error
-                        },
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-                if (!secureSettingsGranted) {
-                    Text(
-                        "第 1 步：先在下方「安全配对与连接」完成配对并连接，然后点击下面的启用按钮。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Button(
-                        onClick = viewModel::enableSecureSettings,
-                        enabled = !adbBusy && !secureSettingsGranted,
-                        modifier = Modifier.weight(1f),
-                    ) { Text(if (secureSettingsGranted) "已授权" else "启用") }
-
-                    Button(
-                        onClick = viewModel::autoStartWirelessAdb,
-                        enabled = !adbBusy,
-                        modifier = Modifier.weight(1f),
-                    ) { Text(if (adbBusy) "处理中…" else "自动开始无线调试") }
-                }
-            }
+            // ── 1.5 自动无线调试（由 feature/adb-autostart 模块提供） ─────────
+            AdbAutostartSection(viewModel = koinViewModel())
 
             // ── 2. 配对与重连控制台 ──────────────────────────────────────────
             SectionHeader("安全配对与连接", "密钥持久化保存在应用私有目录；完成一次配对后无需再查端口")
