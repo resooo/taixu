@@ -47,7 +47,6 @@ class DeveloperViewModel(
 
     init {
         embeddedAdbManager.startDiscovery(EmbeddedAdbManager.TAG_DEVELOPER_UI)
-        refreshWirelessAdbState()
     }
 
     override fun onCleared() {
@@ -108,6 +107,7 @@ class DeveloperViewModel(
     /** 无线调试相关状态文案，供 UI 展示。 */
     private val _wirelessAdbStatus = MutableStateFlow<String?>(null)
     val wirelessAdbStatus: StateFlow<String?> = _wirelessAdbStatus.asStateFlow()
+
     private val _logcatOutput = MutableStateFlow("")
     val logcatOutput: StateFlow<String> = _logcatOutput.asStateFlow()
 
@@ -333,6 +333,8 @@ class DeveloperViewModel(
         refreshProcesses()
         refreshRootfsVersion()
         refreshAgentLogSize()
+        // 无线调试状态刷新：需在全部 StateFlow 声明之后执行（Kotlin 属性按书写顺序初始化）。
+        refreshWirelessAdbState()
     }
 
     fun onCommandInputChanged(value: String) {
