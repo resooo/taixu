@@ -8,7 +8,6 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import top.wkbin.taixu.runtime.bridge.adb.EmbeddedAdbManager
 
@@ -34,8 +33,9 @@ class AdbAutostartInitializer : ContentProvider() {
         // 用 applicationScope 而非 GlobalScope：随进程存续，且不阻塞主线程。
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             runCatching {
-                val autoStarter: WirelessAdbAutoStarter = org.koin.core.context.GlobalContext.get().koin.get()
-                val adbManager: EmbeddedAdbManager = org.koin.core.context.GlobalContext.get().koin.get()
+                val koin = org.koin.core.context.GlobalContext.getOrNull() ?: return@runCatching
+                val autoStarter: WirelessAdbAutoStarter = koin.get()
+                val adbManager: EmbeddedAdbManager = koin.get()
                 val preferences = AdbAutostartPreferences(appContext)
 
                 // 1) 挂载钩子：任何 ADB 调用在未连接时会自动尝试开启无线调试。
@@ -46,7 +46,7 @@ class AdbAutostartInitializer : ContentProvider() {
                 //    避免对未使用该功能的用户产生额外行为。
                 val snapshot = preferences.snapshot()
                 if (snapshot.restoreOnBoot && snapshot.pairedOnce) {
-                    val controller: WirelessAdbController = org.koin.core.context.GlobalContext.get().koin.get()
+                    val controller: WirelessAdbController = koin.get()
                     if (controller.hasSecureSettingsPermission()) {
                         if (adbManager.state.value is EmbeddedAdbManager.ConnectionState.Connected) {
                             Log.i(TAG, "无线 ADB 已连接，跳过启动预热")
