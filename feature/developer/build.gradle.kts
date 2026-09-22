@@ -36,6 +36,5 @@ dependencies {
     implementation(project(":core:datastore"))
     implementation(project(":tools"))
     implementation(project(":runtime"))
-    implementation(project(":feature:adb-autostart"))
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

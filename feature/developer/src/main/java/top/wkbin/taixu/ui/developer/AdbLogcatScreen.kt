@@ -37,7 +37,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import top.wkbin.taixu.feature.adbautostart.AdbAutostartSection
 import top.wkbin.taixu.runtime.bridge.adb.EmbeddedAdbManager
 import top.wkbin.taixu.ui.components.IconTile
 import top.wkbin.taixu.ui.components.NoticeBanner
@@ -64,6 +63,13 @@ import top.wkbin.taixu.ui.developer.LocalizedText as Text
 @Composable
 fun AdbLogcatScreen(
     onBack: () -> Unit,
+    /**
+     * 可选的「自动无线调试」区块插槽。
+     *
+     * 由上层（feature:navigation）注入 feature:adb-autostart 提供的实现，
+     * 避免 feature 模块之间横向依赖（架构检查禁止）。
+     */
+    autoAdbSection: (@Composable () -> Unit)? = null,
     viewModel: DeveloperViewModel = koinViewModel(),
 ) {
     val adbState by viewModel.adbState.collectAsStateWithLifecycle()
@@ -187,8 +193,8 @@ fun AdbLogcatScreen(
                 }
             }
 
-            // ── 1.5 自动无线调试（由 feature/adb-autostart 模块提供） ─────────
-            AdbAutostartSection(viewModel = koinViewModel())
+            // ── 1.5 自动无线调试（由上层通过插槽注入，避免 feature 间横向依赖） ──
+            autoAdbSection?.invoke()
 
             // ── 2. 配对与重连控制台 ──────────────────────────────────────────
             SectionHeader("安全配对与连接", "密钥持久化保存在应用私有目录；完成一次配对后无需再查端口")

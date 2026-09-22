@@ -37,6 +37,7 @@ import top.wkbin.taixu.ui.chat.ChatViewModel
 import top.wkbin.taixu.ui.components.MainDestination
 import top.wkbin.taixu.ui.components.RuntimeBottomBar
 import top.wkbin.taixu.ui.theme.LocalLiquidGlassBackdrop
+import top.wkbin.taixu.feature.adbautostart.AdbAutostartSection
 import top.wkbin.taixu.ui.developer.DeveloperScreen
 import top.wkbin.taixu.ui.developer.AdbLogcatScreen
 import top.wkbin.taixu.ui.home.HomeScreen
@@ -603,7 +604,14 @@ fun TaiXuNavHost(
             }
             entry<AdbLogcatDestination> {
                 GuardedEntry(AdbLogcatDestination) {
-                    AdbLogcatScreen(onBack = ::popBack)
+                    AdbLogcatScreen(
+                        onBack = ::popBack,
+                        // 由本层注入 feature:adb-autostart 的区块实现，
+                        // 避免 feature:developer 横向依赖该模块（架构检查禁止）。
+                        autoAdbSection = {
+                            AdbAutostartSection(viewModel = koinViewModel())
+                        },
+                    )
                 }
             }
             entry<CustomIterationDestination> {
