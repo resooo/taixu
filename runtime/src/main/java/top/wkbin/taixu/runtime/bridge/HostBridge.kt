@@ -325,6 +325,21 @@ class HostBridge(
         val info = privilegeManager.getPrivilegeInfo()
         val responseJson = if (info.modeActive && (info.shizukuAvailable || info.rootAvailable)) {
             val result = privilegeManager.executeShellCommand(command)
+            // 特权通道失败（Shizuku 在部分 ROM 上会因 UserService 启动受限而超时）时，
+            // 回退到内置无线 ADB —— 该路径会经 autoEnableHook 按需自动开启无线调试。
+            if (!result.success) {
+                val explicitPort = obj["port"]?.jsonPrimitive?.content?.toIntOrNull()
+                val fallback = embeddedAdbManager.executeShell(command, explicitPort)
+                if (fallback.success) {
+                    return HttpResponse(200, buildJsonObject {
+                        put("success", true)
+                        put("exitCode", fallback.exitCode ?: 0)
+                        put("stdout", fallback.output)
+                        put("stderr", "")
+                        put("channel", "wireless-adb-fallback")
+                    }.toString())
+                }
+            }
             buildJsonObject {
                 put("success", result.success)
                 put("exitCode", result.exitCode)

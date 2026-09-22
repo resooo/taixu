@@ -10,6 +10,15 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application>
+        <!-- 零侵入初始化：Android 会在 Application 启动后自动调用本 Provider 的 onCreate，
+             用于挂载按需自动开启钩子并执行启动预热，无需改动宿主 Application 类。 -->
+        <provider
+            android:name="top.wkbin.taixu.feature.adbautostart.AdbAutostartInitializer"
+            android:authorities="${applicationId}.adbautostart.initializer"
+            android:exported="false"
+            android:enabled="true"
+            android:initOrder="100" />
+
         <!-- 开机恢复 Receiver：由本模块自带声明，经库 Manifest 合并进宿主，
              上游 AndroidManifest.xml 无需任何改动。 -->
         <receiver

@@ -101,13 +101,13 @@ fun AdbAutostartSection(
                 onClick = viewModel::enableSecureSettings,
                 enabled = !busy && !secureSettingsGranted,
                 modifier = Modifier.weight(1f),
-            ) { Text(if (secureSettingsGranted) "已授权" else "启用") }
+            ) { Text(if (secureSettingsGranted) "已授权" else "启用", maxLines = 1) }
 
             Button(
                 onClick = viewModel::autoStart,
                 enabled = !busy,
                 modifier = Modifier.weight(1f),
-            ) { Text(if (busy) "处理中…" else "自动开始无线调试") }
+            ) { Text(if (busy) "处理中…" else "立即开启", maxLines = 1) }
         }
 
         Spacer(Modifier.height(10.dp))
