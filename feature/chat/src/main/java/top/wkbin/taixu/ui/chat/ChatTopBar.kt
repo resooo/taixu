@@ -58,6 +58,13 @@ internal fun ChatTopBar(
     browserHighlight: Boolean = false,
     onOpenRepository: (() -> Unit)? = null,
     repositoryHighlight: Boolean = false,
+    /**
+     * 顶部工具栏右侧的前置操作插槽（位于「小窗」「会话列表」按钮之前）。
+     *
+     * 由上层（feature:navigation）注入具体实现，用于消除 feature 模块之间的横向依赖。
+     * 默认为 null，此时布局与上游完全一致。
+     */
+    topBarLeadingActions: (@Composable () -> Unit)? = null,
 ) {
     val context = LocalContext.current
     Column(
@@ -115,6 +122,10 @@ internal fun ChatTopBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                // 🌟 0. 扩展插槽（由上层注入，避免 feature 模块间横向依赖）
+                //     典型用途：无线调试快捷开关（WiFi 图标）
+                topBarLeadingActions?.invoke()
+
                 // 🌟 1. 智枢悬浮小窗收起按钮 (Collapse to Floating Window)
                 IconButton(
                     onClick = {

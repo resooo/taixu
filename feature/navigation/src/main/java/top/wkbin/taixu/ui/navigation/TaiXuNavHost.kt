@@ -254,6 +254,13 @@ fun TaiXuNavHost(
                     ChatScreen(
                         viewModel = chatViewModel,
                         onNavigate = ::navigateMain,
+                        // 顶部工具栏注入「一键开启无线调试」快捷按钮（来自 feature:adb-autostart）。
+                        // 通过插槽而非直接依赖，避免 feature 模块间横向依赖（架构检查禁止）。
+                        topBarLeadingActions = {
+                            top.wkbin.taixu.feature.adbautostart.WirelessAdbQuickAction(
+                                viewModel = koinViewModel(),
+                            )
+                        },
                         // 内嵌终端面板非独立导航节点，无返回目标：隐藏顶栏返回箭头，避免点击无反馈
                         terminalPane = { project -> TerminalScreen(onBack = {}, project = project, showBackButton = false) },
                         // 内嵌浏览器面板：与独立浏览器页共享 Activity 级 BrowserViewModel，

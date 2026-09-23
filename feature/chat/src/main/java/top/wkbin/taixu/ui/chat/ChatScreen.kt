@@ -135,6 +135,8 @@ fun ChatScreen(
     browserActivityTick: Long = 0L,
     browserBackPressed: (() -> Boolean)? = null,
     onOpenRepository: ((projectName: String) -> Unit)? = null,
+    /** 顶部工具栏前置操作插槽（由上层注入，避免 feature 模块横向依赖）。 */
+    topBarLeadingActions: (@Composable () -> Unit)? = null,
     viewModel: ChatViewModel = koinViewModel(),
 ) {
     val messages by viewModel.messages.collectAsStateWithLifecycle()
@@ -390,6 +392,7 @@ fun ChatScreen(
                 currentBranch = currentBranch,
                 runtimeEvents = runtimeEvents,
                 running = running,
+                topBarLeadingActions = topBarLeadingActions,
                 onShowFloatingPermissionDialog = { showFloatingPermissionDialog = true },
                 onOpenSessions = { showSessions = true },
                 onOpenModels = { showModels = true },
