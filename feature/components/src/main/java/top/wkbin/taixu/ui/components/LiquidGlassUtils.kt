@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.fastFirstOrNull
 import com.kyant.backdrop.Backdrop
+import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.RuntimeShader
 import com.kyant.backdrop.asComposeShader
 import com.kyant.backdrop.drawBackdrop
@@ -328,142 +329,220 @@ class DampedDragAnimation(
 
 
 /**
- * 液态玻璃效果预设集合。
- * 封装常用的 drawBackdrop 效果配置，避免在每个 Runtime* 组件中重复参数。
+ * Apple HIG Materials 材质分级体系 (Material Levels)
  *
- * 使用方式:
- * ```kotlin
- * Modifier.glassCard(backdrop, shape, surfaceColor)
- * Modifier.glassControl(backdrop, shape)
- * Modifier.glassTrack(backdrop, shape)
- * ```
+ * 严格划分浮动功能层 (Liquid Glass) 与内容展示层 (Standard Materials)：
+ * - [UltraThin]：超薄微控件（Chip、Icon、小角标）
+ * - [Thin]：交互控件（按钮、Switch拇指、Slider拇指）
+ * - [Regular]：浮动功能层（TopBar、BottomBar、FAB、Dialog）
+ * - [Thick]：内容承载层（Card、Sheet、内容面板，重在保持内容可读性）
+ */
+enum class LiquidGlassLevel(
+    val blurRadius: Dp,
+    val lensMin: Dp,
+    val lensMax: Dp,
+    val depthEffect: Boolean = true,
+    val chromaticAberration: Boolean = false,
+    val highlightAlpha: Float = 0.35f,
+    val shadowRadius: Dp = 6.dp,
+    val shadowAlpha: Float = 0.08f,
+    val innerShadowRadius: Dp = 3.dp,
+    val innerShadowAlpha: Float = 0.08f,
+) {
+    /**
+     * 超薄材质 (UltraThin)：小微控件、标签 Chip、小图标按钮、角标等。
+     * 低模糊 + 极小折射 + 微弱阴影，轻盈通透。
+     */
+    UltraThin(
+        blurRadius = 2.dp,
+        lensMin = 4.dp,
+        lensMax = 8.dp,
+        depthEffect = true,
+        chromaticAberration = false,
+        highlightAlpha = 0.28f,
+        shadowRadius = 4.dp,
+        shadowAlpha = 0.06f,
+        innerShadowRadius = 2.dp,
+        innerShadowAlpha = 0.06f,
+    ),
+
+    /**
+     * 薄质材质 (Thin)：按钮、开关拇指、滑块拇指等核心交互控件。
+     * 细腻模糊 + 中等折射 + 色散透镜 + 拟真内阴影与受光高光。
+     */
+    Thin(
+        blurRadius = 3.dp,
+        lensMin = 8.dp,
+        lensMax = 14.dp,
+        depthEffect = true,
+        chromaticAberration = true,
+        highlightAlpha = 0.40f,
+        shadowRadius = 6.dp,
+        shadowAlpha = 0.12f,
+        innerShadowRadius = 3.dp,
+        innerShadowAlpha = 0.10f,
+    ),
+
+    /**
+     * 常规浮动材质 (Regular)：导航栏、顶栏、FAB、弹窗等浮动功能层。
+     * 中等景深模糊 + 大折射 + 柔和环境光与外投射阴影。
+     */
+    Regular(
+        blurRadius = 10.dp,
+        lensMin = 14.dp,
+        lensMax = 22.dp,
+        depthEffect = true,
+        chromaticAberration = false,
+        highlightAlpha = 0.35f,
+        shadowRadius = 10.dp,
+        shadowAlpha = 0.10f,
+        innerShadowRadius = 4.dp,
+        innerShadowAlpha = 0.08f,
+    ),
+
+    /**
+     * 厚质内容材质 (Thick / Content)：内容卡片 (RuntimeCard)、底层画板。
+     * 遵循 Apple HIG "Deference to Content"，平缓模糊 + 低畸变透镜，保证内部文本与代码清晰可读。
+     */
+    Thick(
+        blurRadius = 6.dp,
+        lensMin = 12.dp,
+        lensMax = 20.dp,
+        depthEffect = true,
+        chromaticAberration = false,
+        highlightAlpha = 0.25f,
+        shadowRadius = 8.dp,
+        shadowAlpha = 0.08f,
+        innerShadowRadius = 4.dp,
+        innerShadowAlpha = 0.05f,
+    )
+}
+
+/**
+ * 苹果流体弹簧物理标准配置 (Apple Liquid Spring Spec)
+ */
+val LiquidSpringSpec = spring<Float>(dampingRatio = 0.5f, stiffness = 300f, visibilityThreshold = 0.001f)
+val LiquidOffsetSpringSpec = spring<Offset>(dampingRatio = 0.5f, stiffness = 300f, visibilityThreshold = Offset.VisibilityThreshold)
+
+/**
+ * 液态玻璃效果预设集合。
+ * 严格遵循 Kyant Backdrop 渲染铁律与 Apple HIG Materials 分级体系：
+ * 1. 效果顺序：vibrancy() -> blur() -> lens()
+ * 2. 变换安全：所有形变必须置于 layerBlock 内，防止背景采样贴图被拉伸
+ * 3. 颜色融合：支持 BlendMode.Hue 真实色相染色
+ * 4. 玻璃嵌套：支持 exportedBackdrop 传递，阻断 RenderThread 循环崩溃
  */
 object GlassEffects {
+
     /**
-     * 表面级玻璃效果（卡片、对话框等大面积容器）
-     * 中等模糊 + 大折射 + 景深 + 高光 + 外阴影
+     * 基础通用材质修饰符：按分级材质参数应用 drawBackdrop
+     */
+    fun Modifier.liquidGlassSurface(
+        backdrop: Backdrop,
+        shape: () -> Shape,
+        level: LiquidGlassLevel = LiquidGlassLevel.Regular,
+        exportedBackdrop: LayerBackdrop? = null,
+        layerBlock: (androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit)? = null,
+        onDrawSurface: (androidx.compose.ui.graphics.drawscope.DrawScope.() -> Unit)? = null,
+    ): Modifier = drawBackdrop(
+        backdrop = backdrop,
+        shape = shape,
+        effects = {
+            vibrancy()
+            blur(level.blurRadius.toPx())
+            lens(
+                refractionHeight = level.lensMin.toPx(),
+                refractionAmount = level.lensMax.toPx(),
+                depthEffect = level.depthEffect,
+                chromaticAberration = level.chromaticAberration,
+            )
+        },
+        highlight = if (level.highlightAlpha > 0f) {
+            { Highlight.Default.copy(alpha = level.highlightAlpha) }
+        } else null,
+        shadow = if (level.shadowAlpha > 0f) {
+            { Shadow(radius = level.shadowRadius, alpha = level.shadowAlpha) }
+        } else null,
+        innerShadow = if (level.innerShadowAlpha > 0f) {
+            { InnerShadow(radius = level.innerShadowRadius, alpha = level.innerShadowAlpha) }
+        } else null,
+        exportedBackdrop = exportedBackdrop,
+        layerBlock = layerBlock,
+        onDrawSurface = onDrawSurface,
+    )
+
+    /**
+     * 内容卡片级材质（Thick 材质，支持嵌套玻璃 exportedBackdrop 与安全 layerBlock 缩放）
      */
     fun Modifier.glassCard(
         backdrop: Backdrop,
         shape: () -> Shape,
-        surfaceColor: Color = Color.White.copy(alpha = 0.42f),
-        blurRadius: Dp = 6.dp,
-        lensMin: Dp = 16.dp,
-        lensMax: Dp = 32.dp,
-        highlightStyle: () -> Highlight? = { Highlight.Default },
-        shadowStyle: () -> Shadow? = { Shadow(radius = 6.dp, alpha = 0.12f) },
-        innerShadowStyle: () -> InnerShadow? = { InnerShadow(radius = 4.dp, alpha = 0.08f) },
-    ): Modifier = drawBackdrop(
+        surfaceColor: Color = Color.White.copy(alpha = 0.28f),
+        exportedBackdrop: LayerBackdrop? = null,
+        layerBlock: (androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit)? = null,
+    ): Modifier = liquidGlassSurface(
         backdrop = backdrop,
         shape = shape,
-        effects = {
-            vibrancy()
-            blur(blurRadius.toPx())
-            lens(lensMin.toPx(), lensMax.toPx(), depthEffect = true)
-        },
-        highlight = highlightStyle,
-        shadow = shadowStyle,
-        innerShadow = innerShadowStyle,
+        level = LiquidGlassLevel.Thick,
+        exportedBackdrop = exportedBackdrop,
+        layerBlock = layerBlock,
         onDrawSurface = { drawRect(surfaceColor) },
     )
 
     /**
-     * 控件级玻璃效果（按钮、开关、复选框、单选按钮等交互组件）
-     * 低模糊 + 中折射 + 景深 + 高光 + 内阴影
+     * 控件级材质（Thin 材质，适合按钮与核心触控组件）
      */
     fun Modifier.glassControl(
         backdrop: Backdrop,
         shape: () -> Shape,
-        blurRadius: Dp = 2.dp,
-        lensMin: Dp = 8.dp,
-        lensMax: Dp = 14.dp,
-        highlightAlpha: Float = 0.34f,
-        innerShadowAlpha: Float = 0.10f,
-    ): Modifier = drawBackdrop(
+        tint: Color = Color.Transparent,
+        tonal: Boolean = false,
+        layerBlock: (androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit)? = null,
+    ): Modifier = liquidGlassSurface(
         backdrop = backdrop,
         shape = shape,
-        effects = {
-            vibrancy()
-            blur(blurRadius.toPx())
-            lens(lensMin.toPx(), lensMax.toPx(), depthEffect = true)
-        },
-        highlight = { Highlight.Default.copy(alpha = highlightAlpha) },
-        innerShadow = { InnerShadow(radius = 2.dp, alpha = innerShadowAlpha) },
+        level = LiquidGlassLevel.Thin,
+        layerBlock = layerBlock,
+        onDrawSurface = if (tint != Color.Transparent) {
+            {
+                drawRect(tint, blendMode = BlendMode.Hue)
+                drawRect(tint.copy(alpha = if (tonal) 0.35f else 0.70f))
+            }
+        } else null,
     )
 
     /**
-     * 轨道级玻璃效果（滑块轨道、进度条底部轨道）
-     * 低模糊 + 小折射 + 景深 + 微妙高光
+     * 浮动导航栏/顶栏级材质（Regular 材质）
      */
-    fun Modifier.glassTrack(
+    fun Modifier.glassBar(
         backdrop: Backdrop,
         shape: () -> Shape,
         surfaceColor: Color = Color.Transparent,
-        blurRadius: Dp = 3.dp,
-        lensMin: Dp = 4.dp,
-        lensMax: Dp = 6.dp,
-        highlightAlpha: Float = 0.20f,
-    ): Modifier = drawBackdrop(
+        layerBlock: (androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit)? = null,
+    ): Modifier = liquidGlassSurface(
         backdrop = backdrop,
         shape = shape,
-        effects = {
-            vibrancy()
-            blur(blurRadius.toPx())
-            lens(lensMin.toPx(), lensMax.toPx(), depthEffect = true)
-        },
-        highlight = { Highlight.Default.copy(alpha = highlightAlpha) },
-        shadow = { Shadow(radius = 2.dp, alpha = 0.06f) },
+        level = LiquidGlassLevel.Regular,
+        layerBlock = layerBlock,
         onDrawSurface = if (surfaceColor != Color.Transparent) {
             { drawRect(surfaceColor) }
         } else null,
     )
 
     /**
-     * 指示器/滑块拇指级玻璃效果（底栏指示器、滑块拇指等小型焦点元素）
-     * 低模糊 + 中折射 + 色散 + 景深 + 高光 + 外阴影 + 内阴影
+     * 微型指示器/焦点水滴材质（色散 + 高受光）
      */
     fun Modifier.glassIndicator(
         backdrop: Backdrop,
         shape: () -> Shape,
         surfaceColor: Color = Color.White.copy(alpha = 0.90f),
-        blurRadius: Dp = 2.dp,
-        lensMin: Dp = 6.dp,
-        lensMax: Dp = 12.dp,
-        chromaticAberration: Boolean = true,
-        shadowAlpha: Float = 0.16f,
-        innerShadowAlpha: Float = 0.14f,
-    ): Modifier = drawBackdrop(
+        layerBlock: (androidx.compose.ui.graphics.GraphicsLayerScope.() -> Unit)? = null,
+    ): Modifier = liquidGlassSurface(
         backdrop = backdrop,
         shape = shape,
-        effects = {
-            vibrancy()
-            blur(blurRadius.toPx())
-            lens(lensMin.toPx(), lensMax.toPx(), chromaticAberration = chromaticAberration, depthEffect = true)
-        },
-        highlight = { Highlight.Default },
-        shadow = { Shadow(radius = 4.dp, alpha = shadowAlpha) },
-        innerShadow = { InnerShadow(radius = 3.dp, alpha = innerShadowAlpha) },
+        level = LiquidGlassLevel.Thin,
+        layerBlock = layerBlock,
         onDrawSurface = { drawRect(surfaceColor) },
     )
-
-    /**
-     * 导航栏/顶栏级玻璃效果（半透明宽面板）
-     * 中等模糊 + 大折射 + 景深 + 平面高光
-     */
-    fun Modifier.glassBar(
-        backdrop: Backdrop,
-        shape: () -> Shape,
-        blurRadius: Dp = 10.dp,
-        lensMin: Dp = 14.dp,
-        lensMax: Dp = 22.dp,
-    ): Modifier = drawBackdrop(
-        backdrop = backdrop,
-        shape = shape,
-        effects = {
-            vibrancy()
-            blur(blurRadius.toPx())
-            lens(lensMin.toPx(), lensMax.toPx(), depthEffect = true)
-        },
-        highlight = { Highlight.Plain },
-    )
 }
+

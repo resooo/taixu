@@ -80,7 +80,7 @@ enum class ThemeStyle(
 
 // ======================= 「玄同 · Xuantong」= 默认 M3 Expressive 配色 =======================
 
-private val XuantongLightColors = lightColorScheme(
+val XuantongLightColors = lightColorScheme(
     primary = M3ExpLightPrimary,
     onPrimary = M3ExpLightOnPrimary,
     primaryContainer = M3ExpLightPrimaryContainer,
@@ -112,7 +112,7 @@ private val XuantongLightColors = lightColorScheme(
     outlineVariant = M3ExpLightOutlineVariant,
 )
 
-private val XuantongDarkColors = darkColorScheme(
+val XuantongDarkColors = darkColorScheme(
     primary = M3ExpDarkPrimary,
     onPrimary = M3ExpDarkOnPrimary,
     primaryContainer = M3ExpDarkPrimaryContainer,
@@ -146,7 +146,7 @@ private val XuantongDarkColors = darkColorScheme(
 
 // ======================= 「澄明 · Chengming」液态玻璃配色 =======================
 
-private val ChengmingLightColors = lightColorScheme(
+val ChengmingLightColors = lightColorScheme(
     primary = ChengmingLightPrimary,
     onPrimary = ChengmingLightOnPrimary,
     primaryContainer = ChengmingLightPrimaryContainer,
@@ -178,7 +178,7 @@ private val ChengmingLightColors = lightColorScheme(
     outlineVariant = ChengmingLightOutlineVariant,
 )
 
-private val ChengmingDarkColors = darkColorScheme(
+val ChengmingDarkColors = darkColorScheme(
     primary = ChengmingDarkPrimary,
     onPrimary = ChengmingDarkOnPrimary,
     primaryContainer = ChengmingDarkPrimaryContainer,
@@ -213,7 +213,7 @@ private val ChengmingDarkColors = darkColorScheme(
 /**
  * Material 3 形状体系 (Shape Scale)
  */
-private val TaiXuShapes = Shapes(
+val TaiXuShapes = Shapes(
     extraSmall = RoundedCornerShape(4.dp),
     small = RoundedCornerShape(8.dp),
     medium = RoundedCornerShape(12.dp),
@@ -266,7 +266,7 @@ fun TaiXuTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = AppTypography,
+        typography = if (style == ThemeStyle.LIQUID_GLASS) LiquidGlassTypography else AppTypography,
         shapes = TaiXuShapes,
     ) {
         if (style == ThemeStyle.LIQUID_GLASS) {

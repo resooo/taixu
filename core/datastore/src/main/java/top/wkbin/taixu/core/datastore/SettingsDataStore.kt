@@ -173,6 +173,8 @@ class SettingsDataStore(
     private val preferredExecutionModeKey = stringPreferencesKey("preferred_execution_mode")
     private val customSystemPromptEnabledKey = booleanPreferencesKey("custom_system_prompt_enabled")
     private val customSystemPromptKey = stringPreferencesKey("custom_system_prompt")
+    private val agentCharNameKey = stringPreferencesKey("agent_char_name")
+    private val agentUserNameKey = stringPreferencesKey("agent_user_name")
     private val legacyEnvironmentVariablesKey = stringPreferencesKey("environment_variables_json")
     private val environmentPrivacyModeKey = booleanPreferencesKey("environment_privacy_mode")
 
@@ -258,6 +260,28 @@ class SettingsDataStore(
     suspend fun setCustomSystemPrompt(prompt: String) {
         context.settingsDataStore.edit { preferences ->
             preferences[customSystemPromptKey] = prompt
+        }
+    }
+
+    /** 模型自称（{{char}} 宏与默认提示词人设名），空串回退默认。 */
+    val agentCharName: Flow<String> = context.settingsDataStore.data.map { preferences ->
+        preferences[agentCharNameKey].orEmpty().ifBlank { DEFAULT_AGENT_CHAR_NAME }
+    }
+
+    suspend fun setAgentCharName(name: String) {
+        context.settingsDataStore.edit { preferences ->
+            preferences[agentCharNameKey] = name.trim()
+        }
+    }
+
+    /** 模型对用户的称呼（{{user}}/{{nickname}} 宏），空串回退默认。 */
+    val agentUserName: Flow<String> = context.settingsDataStore.data.map { preferences ->
+        preferences[agentUserNameKey].orEmpty().ifBlank { DEFAULT_AGENT_USER_NAME }
+    }
+
+    suspend fun setAgentUserName(name: String) {
+        context.settingsDataStore.edit { preferences ->
+            preferences[agentUserNameKey] = name.trim()
         }
     }
 
@@ -594,7 +618,7 @@ class SettingsDataStore(
     // ==================== Agent 智能体核心配置 ====================
 
     private val contextCompactionEnabledKey = booleanPreferencesKey("agent_context_compaction_enabled")
-    private val contextCompactionThresholdKey = androidx.datastore.preferences.core.intPreferencesKey("agent_context_compaction_threshold")
+    private val maxConcurrentAgentTurnsKey = androidx.datastore.preferences.core.intPreferencesKey("agent_max_concurrent_turns")
     private val maxToolRoundsKey = androidx.datastore.preferences.core.intPreferencesKey("agent_max_tool_rounds")
     private val roundLimitAutoContinuationsKey =
         androidx.datastore.preferences.core.intPreferencesKey("agent_round_limit_auto_continuations")
@@ -602,12 +626,16 @@ class SettingsDataStore(
     private val commandOutputCompressionEnabledKey = booleanPreferencesKey("agent_command_output_compression_enabled")
     private val baseCommandTimeoutSecondsKey = androidx.datastore.preferences.core.intPreferencesKey("agent_base_command_timeout_seconds")
 
+    /** 全局最大并发 Agent 轮次数（默认 2，受移动端性能/API 限流制约） */
+    val maxConcurrentAgentTurns: Flow<Int> = context.settingsDataStore.data.map {
+        it[maxConcurrentAgentTurnsKey] ?: DEFAULT_MAX_CONCURRENT_AGENT_TURNS
+    }
+    suspend fun setMaxConcurrentAgentTurns(value: Int) {
+        context.settingsDataStore.edit { it[maxConcurrentAgentTurnsKey] = value.coerceIn(1, 4) }
+    }
+
     val contextCompactionEnabled: Flow<Boolean> = context.settingsDataStore.data.map { it[contextCompactionEnabledKey] ?: true }
     suspend fun setContextCompactionEnabled(value: Boolean) { context.settingsDataStore.edit { it[contextCompactionEnabledKey] = value } }
-
-    /** 触发上下文压缩的历史轮数阈值（默认 15 轮） */
-    val contextCompactionThreshold: Flow<Int> = context.settingsDataStore.data.map { it[contextCompactionThresholdKey] ?: 15 }
-    suspend fun setContextCompactionThreshold(value: Int) { context.settingsDataStore.edit { it[contextCompactionThresholdKey] = value.coerceIn(5, 50) } }
 
     /** 最大工具执行轮次（默认 100 轮） */
     val maxToolRounds: Flow<Int> = context.settingsDataStore.data.map { it[maxToolRoundsKey] ?: 100 }
@@ -931,7 +959,11 @@ class SettingsDataStore(
 
     companion object {
         private const val PROTECTED_VALUE_PREFIX = "enc:v1:"
+        const val DEFAULT_MAX_CONCURRENT_AGENT_TURNS = 2
+        const val DEFAULT_AGENT_CHAR_NAME = "太墟智枢"
+        const val DEFAULT_AGENT_USER_NAME = "用户"
         const val DEFAULT_BASE_COMMAND_TIMEOUT_SECONDS = 10 * 60
+
         const val MIN_BASE_COMMAND_TIMEOUT_SECONDS = 60
         const val MAX_BASE_COMMAND_TIMEOUT_SECONDS = 60 * 60
         const val DEFAULT_ROUND_LIMIT_AUTO_CONTINUATIONS = 2

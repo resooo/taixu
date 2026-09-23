@@ -2,6 +2,10 @@ package top.wkbin.taixu.harness.compaction
 
 import android.util.Log
 import java.util.UUID
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import top.wkbin.taixu.core.database.HarnessEntryEntity
@@ -28,6 +32,14 @@ class CompactionManager(
     /** 测试钩子：压缩落库前注入并发写，模拟 acceptRun 等直写路径的竞态窗口。 */
     @Volatile
     internal var beforeCompactionWriteForTest: (suspend () -> Unit)? = null
+
+    /**
+     * 压缩变更信号：每次 compact() 成功落库后自增。UI（上下文用量面板）据此响应式重算
+     * 真实压缩投影——手动压缩（compress 工具）与系统自动压缩（请求前折叠 / 模型切换 /
+     * 上下文溢出紧急压缩）都走同一 [compact] 路径，因此统一被覆盖。
+     */
+    private val _compactionRevision = MutableStateFlow(0L)
+    val compactionRevision: StateFlow<Long> = _compactionRevision.asStateFlow()
 
     suspend fun project(sessionId: String, laneName: String = SessionTreeStore.MAIN_LANE): CompactedContext {
         val lane = repository.ensureLane(sessionId, laneName)
@@ -232,6 +244,7 @@ class CompactionManager(
             )
             beforeCompactionWriteForTest?.invoke()
             repository.appendToLane(sessionId, laneName, entry)
+            _compactionRevision.update { it + 1 }
             Log.d(
                 "ContextCompaction",
                 "压缩会话 $sessionId：折叠 ${collapsed.size} 条（累计 ${payload.cumulativeCompactedMessageCount}），" +

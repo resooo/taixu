@@ -332,6 +332,25 @@ class McpStdioTransport(
                 waiter.complete(parsed)
                 return
             }
+            if (parsed.id == null && parsed.error != null && pending.isNotEmpty()) {
+                // 熔断帧或无 ID 错误响应：优先路由给在途请求，避免请求白白等待最长 600s 超时
+                consecutiveIgnoredFrames = 0
+                if (pending.size == 1) {
+                    val entry = pending.entries.firstOrNull() ?: return
+                    if (pending.remove(entry.key, entry.value)) {
+                        entry.value.complete(parsed.copy(id = entry.key))
+                    }
+                } else {
+                    // 多请求在途且无法确认归属时，为避免挂起，令全部在途请求快速失败（按快照条件原子移除）
+                    val entries = pending.entries.toList()
+                    entries.forEach { (id, waiter) ->
+                        if (pending.remove(id, waiter)) {
+                            waiter.complete(parsed.copy(id = id))
+                        }
+                    }
+                }
+                return
+            }
             // 无等待者的响应 = 超时后的迟到响应或 id 错乱的 server：计入连续不可路由帧——
             // 迟到响应每次超时至多一条且随后必有成功路由清零；持续错乱说明 server 坏了
             countIgnored("MCP 输出了过多无主响应帧")

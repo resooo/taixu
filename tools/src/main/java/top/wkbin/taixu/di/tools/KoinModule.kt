@@ -147,4 +147,22 @@ val toolsModule = module {
     }
 
     single<ToolCommandLinker> { ToolCommandLinker(linuxRuntime = get()) }
+
+    single { top.wkbin.taixu.core.tools.skill.SkillPackageParser() }
+
+    single { top.wkbin.taixu.core.tools.skill.SkillPackageInspector() }
+
+    single { top.wkbin.taixu.core.tools.skill.SkillCompatibilityEvaluator(toolRegistry = getOrNull()) }
+
+    single { top.wkbin.taixu.core.tools.skill.ClawHubClient(httpClient = get()) }
+
+    single {
+        top.wkbin.taixu.core.tools.skill.SkillInstallationManager(
+            packageParser = get(),
+            inspector = get(),
+            compatibilityEvaluator = get(),
+            clawHubClient = get(),
+            agentSkillRepository = get(),
+        )
+    }
 }

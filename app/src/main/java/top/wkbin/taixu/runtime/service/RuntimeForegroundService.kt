@@ -7,19 +7,18 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
-import android.net.wifi.WifiManager
 import android.os.IBinder
-import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import top.wkbin.taixu.R
+import top.wkbin.taixu.lifecycle.ProcessingPowerLease
+import top.wkbin.taixu.lifecycle.RuntimeLifecycleSupervisor
 import top.wkbin.taixu.runtime.shell.ProcessRegistry
 import top.wkbin.taixu.runtime.SshServiceManager
 import top.wkbin.taixu.runtime.FtpServiceManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-
 import kotlinx.coroutines.launch
 
 class RuntimeForegroundService : Service() {
@@ -27,13 +26,15 @@ class RuntimeForegroundService : Service() {
     val localServiceLauncher: LocalServiceLauncher by inject()
     val sshServiceManager: SshServiceManager by inject()
     val ftpServiceManager: FtpServiceManager by inject()
+    val lifeCycleSupervisor: RuntimeLifecycleSupervisor by inject()
     /** 停止后的沙箱进程清理作用域：独立于服务生命周期，服务销毁后也要跑完。 */
     private val cleanupScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    /** CPU 唤醒锁：息屏后保持 CPU 运行，防止 Linux 后台进程/构建/安装被冻结。 */
-    private var wakeLock: PowerManager.WakeLock? = null
-    /** Wi-Fi 锁：息屏后防止 Wi-Fi 无线电源进入省电模式导致沙箱内网络断连。 */
-    private var wifiLock: WifiManager.WifiLock? = null
+    /**
+     * 本服务在 RuntimeLifecycleSupervisor 中持有的租约。
+     * 由 Supervisor 统一管理 WakeLock + WifiLock，此服务不再自持锁。
+     */
+    private var powerLease: ProcessingPowerLease? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -68,12 +69,12 @@ class RuntimeForegroundService : Service() {
                 runCatching { processRegistry.stopAll() }
                 runCatching { ftpServiceManager.stop() }
                 runCatching { sshServiceManager.stop() }
-                releaseLocks()
+                releaseLease()
             }
             return START_NOT_STICKY
         }
         startForeground(NOTIFICATION_ID, notification())
-        acquireLocks()
+        acquireLease()
         return START_STICKY
     }
 
@@ -91,7 +92,7 @@ class RuntimeForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        releaseLocks()
+        releaseLease()
         cleanupScope.launch {
             runCatching { ftpServiceManager.stop() }
             runCatching { sshServiceManager.stop() }
@@ -99,37 +100,18 @@ class RuntimeForegroundService : Service() {
         super.onDestroy()
     }
 
-    private fun acquireLocks() {
-        if (wakeLock?.isHeld != true) {
-            runCatching {
-                wakeLock = getSystemService(PowerManager::class.java)
-                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
-                    .also { it.acquire(LOCK_TIMEOUT_MS) }
-                Log.i(TAG, "Acquired partial wake lock for runtime service")
-            }.onFailure { Log.w(TAG, "获取 CPU 唤醒锁失败", it) }
-        }
-        if (wifiLock?.isHeld != true) {
-            runCatching {
-                @Suppress("DEPRECATION")
-                wifiLock = getSystemService(WifiManager::class.java)
-                    .createWifiLock(WifiManager.WIFI_MODE_FULL, WIFI_LOCK_TAG)
-                    .also { it.acquire() }
-                Log.i(TAG, "Acquired Wi-Fi lock for runtime service")
-            }.onFailure { Log.w(TAG, "获取 Wi-Fi 锁失败", it) }
-        }
+    /** 向 [RuntimeLifecycleSupervisor] 申请租约（幂等，已持有时跳过）。 */
+    private fun acquireLease() {
+        if (powerLease != null) return
+        powerLease = lifeCycleSupervisor.acquireLease(LEASE_HOLDER_ID)
+        Log.i(TAG, "Acquired power lease from RuntimeLifecycleSupervisor")
     }
 
-    private fun releaseLocks() {
-        runCatching {
-            wakeLock?.takeIf { it.isHeld }?.release()
-            Log.i(TAG, "Released wake lock")
-        }.onFailure { Log.w(TAG, "释放 CPU 唤醒锁失败", it) }
-        wakeLock = null
-        runCatching {
-            wifiLock?.takeIf { it.isHeld }?.release()
-            Log.i(TAG, "Released Wi-Fi lock")
-        }.onFailure { Log.w(TAG, "释放 Wi-Fi 锁失败", it) }
-        wifiLock = null
+    /** 释放租约；幂等，安全多次调用。 */
+    private fun releaseLease() {
+        powerLease?.close()
+        powerLease = null
+        Log.i(TAG, "Released power lease from RuntimeLifecycleSupervisor")
     }
 
     private fun notification(): Notification {
@@ -163,9 +145,6 @@ class RuntimeForegroundService : Service() {
         private const val LEGACY_CAPSULE_CHANNEL_ID = "taixu-runtime-capsule-v4"
         private const val NOTIFICATION_ID = 1001
         private const val TAG = "RuntimeForegroundService"
-        private const val WAKE_LOCK_TAG = "taixu:runtime-service"
-        private const val WIFI_LOCK_TAG = "taixu:runtime-wifi"
-        /** 唤醒锁超时：8 小时兜底，避免异常情况下永久持有。 */
-        private const val LOCK_TIMEOUT_MS = 8 * 60 * 60 * 1000L
+        private const val LEASE_HOLDER_ID = "runtime-foreground-service"
     }
 }

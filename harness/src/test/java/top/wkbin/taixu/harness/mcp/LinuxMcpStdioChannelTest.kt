@@ -44,6 +44,40 @@ class LinuxMcpStdioChannelTest {
         override suspend fun close() {}
     }
 
+    /** 连续吐出多条超长行后正常完成的会话：锁定"单帧熔断"行为。 */
+    private class OversizedSpamSession(maxFrameChars: Int) : LinuxSession {
+        override val isAlive = true
+        override val output = flow {
+            val oversizedLine = "x".repeat(maxFrameChars + 1024) + "\n"
+            emit(TerminalOutput(TerminalStream.STDOUT, oversizedLine))
+            emit(TerminalOutput(TerminalStream.STDOUT, oversizedLine))
+            emit(TerminalOutput(TerminalStream.STDOUT, oversizedLine))
+            emit(TerminalOutput(TerminalStream.STDOUT, "{\"ok\":true}\n"))
+        }
+        override suspend fun write(data: ByteArray) {}
+        override suspend fun resize(columns: Int, rows: Int) {}
+        override suspend fun interrupt() {}
+        override suspend fun close() {}
+    }
+
+    @Test
+    fun `consecutive oversized lines produce a single circuit-break error frame`() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val maxFrameChars = 64
+        val channel = LinuxMcpStdioChannel("srv", OversizedSpamSession(maxFrameChars), scope = scope, maxFrameChars = maxFrameChars)
+        val frames = mutableListOf<String>()
+        withTimeoutOrNull(2_000L) {
+            for (frame in channel.incoming) {
+                frames += frame
+            }
+        }
+        scope.cancel()
+
+        val errorFrames = frames.filter { it.contains("-32603") }
+        assertTrue("连续超长行只应广播一条熔断帧，实际 ${errorFrames.size} 条: $frames", errorFrames.size == 1)
+        assertTrue("正常帧应照常转发", frames.any { it.contains("\"ok\":true") })
+    }
+
     @Test
     fun `close unwinds a pump stalled on a full send buffer`() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

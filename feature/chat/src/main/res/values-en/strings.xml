@@ -20,6 +20,8 @@
     <string name="chat_interrupted">Execution interrupted</string>
     <string name="chat_parallel_running">Running in parallel</string>
     <string name="chat_subtask_count">%1$d subtasks running in parallel</string>
+    <string name="chat_subtask_progress">%1$d/%2$d completed</string>
+    <string name="chat_subtask_failed_count">%1$d failed</string>
     <string name="chat_execution_summary">Summary &amp; output</string>
     <string name="chat_subagent_running">A subagent is using sandbox tools and analyzing results. Its summary will appear here when complete…</string>
     <string name="chat_approval_request">Request approval</string>
@@ -250,6 +252,8 @@
     <string name="chat_subagent_loading">Loading subagent results…</string>
     <string name="chat_subagent_task">Research task</string>
     <string name="chat_subagent_final_result">Final result</string>
+    <string name="chat_subagent_partial_result">Last progress (task ended abnormally)</string>
+    <string name="chat_subagent_partial_hint">This subtask timed out or was interrupted; what follows is its last working state, not a final conclusion.</string>
     <string name="chat_subagent_no_result">This subagent did not produce a text result.</string>
     <string name="chat_subagent_pending">This subagent is still running. Tap “Refresh result” when it finishes.</string>
     <string name="chat_subagent_process">Research process · %1$d records · %2$d tool calls</string>

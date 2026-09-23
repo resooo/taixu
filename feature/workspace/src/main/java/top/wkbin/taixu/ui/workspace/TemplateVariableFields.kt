@@ -1,14 +1,16 @@
 package top.wkbin.taixu.ui.workspace
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Checkbox
+import top.wkbin.taixu.ui.components.RuntimeCheckbox as Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.IconButton
+import top.wkbin.taixu.ui.components.RuntimeIconButton as IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -28,6 +30,8 @@ import androidx.compose.ui.unit.dp
 import top.wkbin.taixu.feature.workspace.R
 import top.wkbin.taixu.template.ProjectTemplateInputType
 import top.wkbin.taixu.template.ProjectTemplateVariable
+import top.wkbin.taixu.ui.components.RuntimeIcon
+import top.wkbin.taixu.ui.components.RuntimeIconName
 
 @Composable
 private fun VariableLabel(label: String, required: Boolean) {
@@ -50,7 +54,10 @@ internal fun TemplateVariableFields(
         val error = templateVariableError(variable, value)
         when (variable.inputType) {
             ProjectTemplateInputType.BOOLEAN -> Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onValueChange(variable.name, (!value.equals("true", ignoreCase = true)).toString()) }
+                    .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
@@ -77,7 +84,16 @@ internal fun TemplateVariableFields(
                             { Text(description) }
                         },
                         trailingIcon = {
-                            IconButton(onClick = { expanded = true }) { Text("▾") }
+                            IconButton(
+                                onClick = { expanded = true },
+                                contentDescription = variable.label,
+                            ) {
+                                RuntimeIcon(
+                                    RuntimeIconName.ChevronDown,
+                                    Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         },
                         modifier = Modifier.fillMaxWidth(),
                     )

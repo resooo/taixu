@@ -93,6 +93,49 @@ class AppUpdateManager(
     }
 
     /**
+     * 读取内置 assets 中的 release_notes.md，用于离线或首次打开时瞬时展示
+     */
+    fun getBundledReleaseNotes(): String {
+        return runCatching {
+            context.assets.open("release_notes.md").bufferedReader().use { it.readText() }
+        }.getOrDefault("")
+    }
+
+    /**
+     * 向 GitHub 请求指定版本（tag）的 Release 说明
+     */
+    suspend fun fetchReleaseNotes(versionName: String): Result<String> = withContext(Dispatchers.IO) {
+        runCatching {
+            val clean = versionName.substringBefore('-').trim()
+            val tag = if (clean.startsWith("v")) clean else "v$clean"
+            val request = Request.Builder()
+                .url("https://api.github.com/repos/$GITHUB_REPO/releases/tags/$tag")
+                .header("Accept", "application/vnd.github.v3+json")
+                .header("User-Agent", "TaiXu-App/$versionName")
+                .get()
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("GitHub 响应错误 HTTP ${response.code}")
+                }
+                val body = response.body.string()
+                val jsonElement = json.parseToJsonElement(body).jsonObject
+                jsonElement["body"]?.jsonPrimitive?.content.orEmpty()
+            }
+        }
+    }
+
+    /**
+     * 获取当前版本的更新说明：优先返回内置资源，若有网络且远端有效则返回远端内容
+     */
+    suspend fun getOrFetchCurrentReleaseNotes(currentVersionName: String): String {
+        val bundled = getBundledReleaseNotes()
+        val remote = fetchReleaseNotes(currentVersionName).getOrNull()
+        return if (!remote.isNullOrBlank()) remote else bundled
+    }
+
+    /**
      * 下载 APK 文件并报告下载进度
      */
     suspend fun downloadApk(

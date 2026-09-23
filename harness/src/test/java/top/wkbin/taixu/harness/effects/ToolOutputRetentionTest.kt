@@ -1,6 +1,7 @@
 package top.wkbin.taixu.harness.effects
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ToolOutputRetentionTest {
@@ -40,5 +41,27 @@ class ToolOutputRetentionTest {
         // 单行超预算时退化为硬截断
         assertEquals("aaaa", keepTailWholeLines("aaaaaaaaaa", 4))
         assertEquals(text, keepTailWholeLines(text, 100))
+    }
+
+    @Test
+    fun `normal multi-line output passes through folding untouched`() {
+        val text = "aaaa\nbbbb\ncccc\n"
+        assertEquals(text, foldOverlongLines(text))
+    }
+
+    @Test
+    fun `overlong single line is folded to head marker tail`() {
+        val line = "x".repeat(100_000)
+        val folded = foldOverlongLines(line, maxLineChars = 2000)
+        // 折叠后不再有超预算的行（提示占的行也计入）
+        assertTrue(folded.lines().all { it.length <= 2000 })
+        assertTrue(folded.startsWith("x".repeat(1000)))
+        assertTrue(folded.endsWith("x".repeat(500)))
+        assertTrue(folded.contains("已折叠") && folded.contains("100000"))
+        // 多行文本只折叠超长行，其余原样保留
+        val mixed = "ok\n$line\nfine"
+        val foldedMixed = foldOverlongLines(mixed, maxLineChars = 2000)
+        assertTrue(foldedMixed.startsWith("ok\n"))
+        assertTrue(foldedMixed.endsWith("fine"))
     }
 }

@@ -50,6 +50,7 @@ fun SettingsScreen(
     onOpenAppearance: () -> Unit,
     onOpenSystemDev: () -> Unit,
     onOpenAboutCommunity: () -> Unit,
+    onOpenSearch: () -> Unit = {},
     viewModel: SettingsViewModel = koinViewModel(),
 ) {
     val models by viewModel.models.collectAsStateWithLifecycle()
@@ -93,12 +94,46 @@ fun SettingsScreen(
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 104.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // 全局功能搜索快捷入口卡片
+            item {
+                RuntimeCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onOpenSearch,
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
+                    borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 11.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        RuntimeIcon(
+                            name = RuntimeIconName.Search,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                        Text(
+                            text = "搜索全局功能与设置选项...",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            modifier = Modifier.weight(1f),
+                        )
+                        RuntimeIcon(
+                            name = RuntimeIconName.ChevronRight,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        )
+                    }
+                }
+            }
+
             item {
                 Text(
                     text = "系统与配置分类",
                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+                    modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 2.dp),
                 )
             }
 

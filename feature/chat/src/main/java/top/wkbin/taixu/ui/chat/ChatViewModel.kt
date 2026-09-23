@@ -26,6 +26,7 @@ import top.wkbin.taixu.harness.PendingMessage
 import top.wkbin.taixu.harness.QueuedPrompt
 import top.wkbin.taixu.harness.ContextWindowPolicy
 import top.wkbin.taixu.harness.ContextUsageBreakdown
+import top.wkbin.taixu.harness.compaction.CompactedContext
 import top.wkbin.taixu.harness.ToolCallMode
 import top.wkbin.taixu.harness.prompt.SystemPromptBuilder
 import top.wkbin.taixu.harness.events.HarnessEvent
@@ -516,6 +517,24 @@ class ChatViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
+     * 真实压缩投影缓存（与引擎 ApiContextAssembler 同源）：按 (sessionId, compactionRevision)
+     * 从树读取 `CompactionManager.project()`。只在会话切换或某次压缩落库后才重读，
+     * 避免流式期间（每 token 一次）对 DAO 的频繁查询。
+     * 键必须同时含 revision：只发 sessionId 会被 distinctUntilChanged 吞掉压缩信号，
+     * 面板就只有重进应用（ViewModel 重建）才能看到压缩后的用量。
+     * 用量面板依赖它：已折叠历史以摘要层形式计 token，不再重复计入对话体积。
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val compactedContext: StateFlow<CompactedContext?> =
+        combine(harnessLoop.currentSessionId, compactionManager.compactionRevision) { sessionId, revision ->
+            sessionId to revision
+        }
+            .distinctUntilChanged()
+            .mapLatest { (sessionId, _) -> compactionManager.project(sessionId) }
+            .flowOn(Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
      * 当前会话上下文用量的 UI 估算。Harness 发请求时会用同一字符/token 近似值再做最终压缩，
      * 因此这里明确是预估值，而不是 provider 返回的精确 tokenizer 计数。
      */
@@ -555,6 +574,8 @@ class ChatViewModel(
     }.combine(settingsDataStore.contextFoldingRatioPercent) { (inputs, sessionId, compactionEnabled), foldingRatioPercent ->
         ContextUsageCalculation(inputs, sessionId, compactionEnabled, foldingRatioPercent)
     }.combine(systemPromptBuilder.usageSnapshots) { calculation, snapshots ->
+        calculation to snapshots
+    }.combine(compactedContext) { (calculation, snapshots), compacted ->
         val (inputs, sessionId, compactionEnabled, foldingRatioPercent) = calculation
         val activeModel = inputs.activeModel
         val pureChat = activeModel?.pureChatMode == true
@@ -594,18 +615,36 @@ class ChatViewModel(
             providerId = activeModel?.provider,
         )
 
-        // 与引擎同源（ApiContextAssembler）：把全量 UI 消息投影成「实际会发送的那份」再估算。
+        // 与引擎同源（ApiContextAssembler）：把消息投影成「实际会发送的那份」再估算。
         // 引擎在压缩判定前会截断老轮次工具结果（浏览器快照、长 read 等大输出），面板此前漏了这一步，
         // 导致已用量虚高（实测 457.8K vs 实际发送 ~141K，约 3 倍）。收敛到 ContextWindowPolicy.projectForUsage。
+        //
+        // 关键修复：投影必须基于「真实压缩投影」compacted（CompactionManager.project()）而不是
+        // 全量转写 inputs.currentMessages。压缩是树状折叠，UI 转写（SessionMessageProjector）只增不删，
+        // 旧实现拿全量转写每次重新做预算折叠，导致手动/系统自动压缩成功后面板用量纹丝不动。
+        // compacted.messages 即引擎发送形态（summary 层 + retained + healed + after）。
         val projectedMessages = ContextWindowPolicy.projectForUsage(
-            messages = inputs.currentMessages,
+            messages = compacted?.messages ?: inputs.currentMessages,
             compactionEnabled = compactionEnabled,
         )
+
+        // 与引擎同源（ApiContextAssembler 折叠线）：真实摘要层与召回后缀都计为固定系统开销，
+        // 从历史预算中扣除，否则面板的折叠触发线会比引擎实际行为偏高。
+        // summaryTokens 同时计入「已折叠对话」细分——estimateEffectiveUsage 的 summarizedTokens
+        // 只反映预算驱动的再折叠，压缩后保留窗不再越过预算线 → 恒为 0，若不补真值，压缩这种
+        // 最大的体积削减会从面板上完全消失。
+        val summaryTokens = if (compactionEnabled) {
+            ContextWindowPolicy.estimateTokens(compacted?.summaryLayer.orEmpty())
+        } else 0
+        val recallTokens = if (compactionEnabled) {
+            ContextWindowPolicy.estimateTokens(compacted?.recallBlocks?.values.orEmpty().joinToString("\n"))
+        } else 0
+        val foldingOverheadTokens = promptOverheadTokens + summaryTokens + recallTokens
 
         val effectiveUsage = ContextWindowPolicy.estimateEffectiveUsage(
             messages = projectedMessages,
             budget = budget,
-            systemTokens = promptOverheadTokens,
+            systemTokens = foldingOverheadTokens,
             compactionEnabled = compactionEnabled,
             systemPromptTokens = systemPromptTokens,
             toolDefinitionTokens = toolDefinitionTokens,
@@ -624,22 +663,28 @@ class ChatViewModel(
         val compactionThresholdTokens = ContextWindowPolicy.foldingLimitFor(
             budget = budget,
             ratioPercent = foldingRatioPercent,
-            systemTokens = promptOverheadTokens,
+            systemTokens = foldingOverheadTokens,
         ).coerceAtLeast(1)
 
+        // 引擎会把召回后缀追加到 user 消息上随请求发送，因此「已用」总量与对话细分都应计入
+        // recall——否则 usedTokens 相对引擎实际发送量系统性偏低（召回只影响过触发线、没进总量）。
+        val foldedBreakdown = effectiveUsage.breakdown.copy(
+            summarizedTokens = effectiveUsage.breakdown.summarizedTokens + summaryTokens,
+            conversationTokens = effectiveUsage.breakdown.conversationTokens + recallTokens,
+        )
         ContextUsage(
-            usedTokens = effectiveUsage.totalTokens,
+            usedTokens = foldedBreakdown.totalTokens,
             limitTokens = budget,
             compactionThresholdTokens = compactionThresholdTokens,
             declaredTokens = effectiveContextWindow ?: budget,
             systemTokens = totalSystemTokens,
             toolTokens = effectiveUsage.toolTokens,
-            conversationTokens = effectiveUsage.conversationTokens,
-            compacted = effectiveUsage.keepFromIndex > 0,
+            conversationTokens = effectiveUsage.conversationTokens + recallTokens,
+            compacted = summaryTokens > 0 || effectiveUsage.keepFromIndex > 0,
             cachedTokens = totalCachedTokens,
             cacheHitRatePercent = cacheHitPct,
             foldingRatioPercent = foldingRatioPercent,
-            breakdown = effectiveUsage.breakdown,
+            breakdown = foldedBreakdown,
         )
 
     }

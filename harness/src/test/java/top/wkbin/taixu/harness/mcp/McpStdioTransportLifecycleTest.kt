@@ -278,6 +278,43 @@ class McpStdioTransportLifecycleTest {
     }
 
     @Test
+    fun `circuit breaker error frame routes to in-flight request without hanging`() = runBlocking {
+        val channel = CircuitBreakerMcpChannel()
+        val transport = newTransport(FakeChannelFactory(channel))
+        transport.injectConnection(echoServer, channel)
+        transport.requestTimeoutOverrideMs = 5_000L
+
+        val result = withTimeoutOrNull(2_000L) {
+            transport.execute(echoServer, "oversized_tool", JsonObject(emptyMap()))
+        }
+        assertNotNull("熔断错误帧必须即时路由给等待者，不得超时挂起", result)
+        assertFalse(result!!.first)
+        assertTrue(result.second.contains("熔断保护") || result.second.contains("-32603"))
+        assertTrue("熔断错误属于业务级保护，通道必须保留复用", transport.test_connectionKeys().contains(echoServer.id))
+    }
+
+    private class CircuitBreakerMcpChannel : McpStdioChannel {
+        override val incoming: Channel<String> = Channel(Channel.UNLIMITED)
+        @Volatile private var alive = true
+        override val isAlive: Boolean get() = alive
+
+        override suspend fun writeLine(line: String) {
+            val id = Regex("\\\"id\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(line)?.groupValues?.get(1) ?: return
+            if ("\"method\":\"initialize\"" in line) {
+                incoming.send("{\"jsonrpc\":\"2.0\",\"id\":\"$id\",\"result\":{\"protocolVersion\":\"$MCP_PROTOCOL_VERSION\"}}")
+            } else if ("\"method\":\"tools/call\"" in line) {
+                // 模拟单行输出超限熔断：下发无 id 的 -32603 错误帧
+                incoming.send("""{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"MCP STDIO 单行输出超过安全上限 (1MB)，已触发移动端熔断保护"}}""")
+            }
+        }
+
+        override suspend fun close() {
+            alive = false
+            incoming.close()
+        }
+    }
+
+    @Test
     fun `cancellation during write propagates and leaves no pending waiter`() = runBlocking {
         val channel = BlockingWriteMcpChannel()
         val transport = newTransport(FakeChannelFactory(channel))

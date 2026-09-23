@@ -16,6 +16,7 @@ import top.wkbin.taixu.runtime.shell.ShellCommand
 import top.wkbin.taixu.harness.checkpoint.CheckpointStore
 import top.wkbin.taixu.harness.effects.OutputRetention
 import top.wkbin.taixu.harness.effects.ToolOutputRetention
+import top.wkbin.taixu.harness.effects.foldOverlongLines
 import top.wkbin.taixu.harness.effects.keepHeadWholeLines
 import top.wkbin.taixu.harness.effects.keepTailWholeLines
 import top.wkbin.taixu.harness.compaction.CompressAnchorResult
@@ -215,13 +216,16 @@ class ToolExecutor(
         toolName: String?,
         fileAccess: WorkspaceFileAccess?,
     ): String {
-        if (output.length <= MAX_OUTPUT_LENGTH) return output
+        // 超长单行先折叠（混淆/压缩文件）：否则单行预算退化成保留 60k 字符的整行，
+        // 一条 tool result 就可能超出单条消息的传输上限导致连接被重置。落盘仍用原始全量。
+        val folded = foldOverlongLines(output)
+        if (folded.length <= MAX_OUTPUT_LENGTH) return folded
         val spillPath = fileAccess?.let { ToolOutputSpillStore.spill(it, toolName, output) }
         // 差异化截断：命令/构建/日志保留尾部（报错在末尾），读取/搜索保留头部。
         val retention = ToolOutputRetention.forTool(toolName)
         val kept = when (retention) {
-            OutputRetention.TAIL -> keepTailWholeLines(output, TRUNCATE_KEEP_LENGTH)
-            OutputRetention.HEAD -> keepHeadWholeLines(output, TRUNCATE_KEEP_LENGTH)
+            OutputRetention.TAIL -> keepTailWholeLines(folded, TRUNCATE_KEEP_LENGTH)
+            OutputRetention.HEAD -> keepHeadWholeLines(folded, TRUNCATE_KEEP_LENGTH)
         }
         val totalLines = output.count { it == '\n' } + 1
         val keptLines = kept.count { it == '\n' } + 1
@@ -866,12 +870,9 @@ class ToolExecutor(
     }
 
     private suspend fun executeCompress(args: JsonObject, sessionId: String): Pair<Boolean, String> {
-        val compressionEnabled = settingsDataStore?.let { prefs ->
-            runCatching { prefs.commandOutputCompressionEnabled.first() }.getOrDefault(true)
-        } ?: true
-        if (!compressionEnabled) {
-            return false to "手动 compress 已被设置中的‘命令输出压缩’开关关闭；未修改会话历史。请先开启该开关后重试。"
-        }
+        // compress 只会在用户明确要求时由模型调用，属于显式会话操作。
+        // 不受「命令输出压缩」或「自动上下文压缩」开关约束：前者仅控制 RTK 命令输出，
+        // 后者仅控制 ApiContextAssembler 的自动折叠策略。
         val manager = compactionManager ?: return false to "未初始化压缩管理器"
         val mode = args.stringArg("mode").orEmpty().trim().lowercase()
         val anchor = args.stringArg("anchor").orEmpty()

@@ -12,13 +12,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import top.wkbin.taixu.ui.components.RuntimeCircularProgressIndicator as CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import top.wkbin.taixu.runtime.gui.WorkflowGuiHudBridge
 
@@ -51,11 +52,10 @@ fun WorkflowHudOverlay(
     Surface(
         modifier = Modifier
             .padding(horizontal = 8.dp, vertical = 4.dp)
-            .heightIn(min = 36.dp),
+            .heightIn(min = 40.dp),
         shape = RoundedCornerShape(50),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
         tonalElevation = 3.dp,
-        shadowElevation = 6.dp,
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -92,27 +92,35 @@ fun WorkflowHudOverlay(
             )
             if (session.active) {
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "停止",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 1,
+                Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
                         .clickable(onClick = onStop)
-                        .padding(horizontal = 10.dp, vertical = 6.dp),
-                )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "停止",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
+                    )
+                }
             } else {
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "✕",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
                         .clickable(onClick = onDismiss)
-                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = "✕",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }

@@ -45,7 +45,6 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,6 +90,7 @@ import top.wkbin.taixu.ui.components.RuntimeIconName
 import top.wkbin.taixu.ui.components.RuntimeOutlinedButton
 import top.wkbin.taixu.ui.components.RuntimeSlider
 import top.wkbin.taixu.ui.components.RuntimeSwitch
+import top.wkbin.taixu.ui.components.RuntimeTextButton
 import top.wkbin.taixu.ui.components.RuntimeTopBar
 
 /**
@@ -287,8 +287,10 @@ private fun ModelEditorContent(
         keyList.map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
     }
 
-    val candidateModels = remember(discovered, provider) {
-        (discovered + provider.recommendedModels).distinct().filter { it.isNotBlank() }
+    // 已选模型必须始终出现在候选列表中：否则厂商下架后刷新接口与预设都拿不到该模型，
+    // 它会隐身存在于 selectedModels 里，既看不到也无法取消
+    val candidateModels = remember(discovered, provider, selectedModels) {
+        (selectedModels + discovered + provider.recommendedModels).distinct().filter { it.isNotBlank() }
     }
     val filteredCandidateModels = remember(candidateModels, modelSearchQuery) {
         filterCandidateModels(candidateModels, modelSearchQuery)
@@ -1498,7 +1500,12 @@ private fun BatchImportKeysDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     "粘贴多个 API 密钥，一行一个，遇到换行即为下一个 Key：",
                     style = MaterialTheme.typography.bodySmall,
@@ -1558,7 +1565,7 @@ private fun BatchImportKeysDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            RuntimeTextButton(onClick = onDismiss) {
                 Text("取消")
             }
         },
@@ -1582,7 +1589,12 @@ private fun QuickImportJsonDialog(
             }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
                 Text(
                     "粘贴太墟导出的模型配置或 OpenAI 兼容 JSON，将自动解析并填入当前表单：",
                     style = MaterialTheme.typography.bodySmall,
@@ -1622,7 +1634,7 @@ private fun QuickImportJsonDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            RuntimeTextButton(onClick = onDismiss) {
                 Text("取消")
             }
         },
@@ -1847,7 +1859,7 @@ private fun ProviderPickerDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            RuntimeTextButton(onClick = onDismiss) {
                 Text("关闭")
             }
         },

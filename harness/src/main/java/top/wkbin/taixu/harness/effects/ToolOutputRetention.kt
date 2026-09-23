@@ -35,3 +35,30 @@ internal fun keepTailWholeLines(text: String, maxChars: Int): String {
     val cut = if (newline < 0) text.length - maxChars else newline + 1
     return text.substring(cut.coerceIn(0, text.length))
 }
+
+/**
+ * 折叠超长单行（混淆/压缩/最小化文件一整行可达数十万字符）：
+ * 按行截断策略对单行会退化为保留 60k 字符的整行，一条 tool result 就能顶爆单条消息
+ * 的传输上限（中转 Connection reset），且对模型几乎没有可读信息。
+ * 折叠为「头部 + 提示 + 尾部」并保证结果行不超预算，提示模型用 grep -o 提取片段。
+ * 返回值保证不包含超过 [maxLineChars] 的行，后续按行截断不再退化为硬切。
+ */
+internal fun foldOverlongLines(text: String, maxLineChars: Int = 2000): String {
+    if (text.lines().none { it.length > maxLineChars }) return text
+    val head = maxLineChars / 2
+    val tail = maxLineChars / 4
+    return text.lines().joinToString("\n") { line ->
+        if (line.length <= maxLineChars) {
+            line
+        } else {
+            buildString {
+                append(line, 0, head)
+                append("\n[单行内容过长已折叠：本行共 ")
+                append(line.length)
+                append(" 字符，疑似压缩/混淆/最小化文件，整行可读性极低。")
+                append("如需定位内容请用 grep -o 提取匹配片段、sed -n 按行号或字节段查看，不要原样输出整行。]\n")
+                append(line.takeLast(tail))
+            }
+        }
+    }
+}

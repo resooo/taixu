@@ -60,6 +60,7 @@ class PromptAssetLoaderTest {
     @Test
     fun allKnownAssetVariablesCanBeRendered() {
         val variables = mapOf(
+            "CHAR_NAME" to "太墟智枢",
             "DISTRO_NAME" to "Debian",
             "PKG_MANAGER" to "apt-get install",
             "ACTIVE_SKILLS" to "",

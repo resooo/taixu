@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -43,6 +44,7 @@ import top.wkbin.taixu.ui.components.RuntimeLinearProgressIndicator as LinearPro
 import top.wkbin.taixu.ui.components.RuntimeOutlinedButton as OutlinedButton
 import top.wkbin.taixu.ui.components.RuntimeTextButton as TextButton
 import top.wkbin.taixu.ui.components.RuntimeTopBar
+import top.wkbin.taixu.ui.components.MarkdownText
 
 /**
  * 二级子页 4：关于、版本更新与官方社区
@@ -59,6 +61,9 @@ fun AboutCommunityScreen(
     val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
     var showAboutDialog by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var showReleaseNotesDialog by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val currentReleaseNotes by viewModel.currentReleaseNotes.collectAsStateWithLifecycle()
+    val isLoadingReleaseNotes by viewModel.isLoadingReleaseNotes.collectAsStateWithLifecycle()
     val currentVersion = rememberAppVersion()
 
     // 版本更新弹窗
@@ -90,6 +95,15 @@ fun AboutCommunityScreen(
                             Text("确定")
                         }
                     },
+                    dismissButton = {
+                        TextButton(onClick = {
+                            viewModel.clearUpdateState()
+                            viewModel.loadCurrentReleaseNotes(currentVersion)
+                            showReleaseNotesDialog = true
+                        }) {
+                            Text("本版日志")
+                        }
+                    },
                 )
             }
         }
@@ -114,7 +128,24 @@ fun AboutCommunityScreen(
     }
 
     if (showAboutDialog) {
-        AboutAppDialog(onDismiss = { showAboutDialog = false })
+        AboutAppDialog(
+            onDismiss = { showAboutDialog = false },
+            onOpenReleaseNotes = {
+                showAboutDialog = false
+                viewModel.loadCurrentReleaseNotes(currentVersion)
+                showReleaseNotesDialog = true
+            },
+        )
+    }
+
+    if (showReleaseNotesDialog) {
+        VersionReleaseNotesDialog(
+            version = currentVersion,
+            releaseNotes = currentReleaseNotes,
+            isLoading = isLoadingReleaseNotes,
+            onDismiss = { showReleaseNotesDialog = false },
+            onOpenHistory = { openBrowser(context, "https://github.com/wkbin/taixu/releases") },
+        )
     }
 
     Scaffold(
@@ -144,6 +175,16 @@ fun AboutCommunityScreen(
                             if (updateCheckState !is top.wkbin.taixu.core.model.UpdateCheckState.Checking) {
                                 viewModel.checkForUpdates(currentVersion)
                             }
+                        },
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    SettingsRow(
+                        icon = RuntimeIconName.Document,
+                        title = "版本更新日志",
+                        subtitle = "查看当前版本 (v$currentVersion) 的更新说明与功能亮点",
+                        onClick = {
+                            viewModel.loadCurrentReleaseNotes(currentVersion)
+                            showReleaseNotesDialog = true
                         },
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
@@ -214,7 +255,10 @@ fun AboutCommunityScreen(
 }
 
 @Composable
-private fun AboutAppDialog(onDismiss: () -> Unit) {
+private fun AboutAppDialog(
+    onDismiss: () -> Unit,
+    onOpenReleaseNotes: () -> Unit,
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val appVersion = rememberAppVersion()
     RuntimeAlertDialog(
@@ -232,6 +276,15 @@ private fun AboutAppDialog(onDismiss: () -> Unit) {
                 Text("架构: aarch64 · chroot-less user-space virtualization", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("协议: Apache-2.0 License", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = onOpenReleaseNotes,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    RuntimeIcon(RuntimeIconName.Document, Modifier.size(16.dp), MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text("本版更新日志")
+                }
                 OutlinedButton(
                     onClick = { joinQqGroup(context, "964382207") },
                     modifier = Modifier.fillMaxWidth(),
@@ -293,10 +346,8 @@ private fun UpdateInfoDialog(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(
-                            text = info.releaseNotes,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
+                        MarkdownText(
+                            markdown = info.releaseNotes,
                             modifier = Modifier.padding(12.dp),
                         )
                     }
@@ -369,4 +420,61 @@ private fun openBrowser(context: Context, url: String) {
         clipboard?.setPrimaryClip(clip)
         android.widget.Toast.makeText(context, "已复制链接：$url", android.widget.Toast.LENGTH_SHORT).show()
     }
+}
+
+@Composable
+private fun VersionReleaseNotesDialog(
+    version: String,
+    releaseNotes: String?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit,
+    onOpenHistory: () -> Unit,
+) {
+    RuntimeAlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                RuntimeIcon(RuntimeIconName.Document, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+                Text("太墟 v$version 更新说明", fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (isLoading && releaseNotes.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(32.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(32.dp))
+                    }
+                } else if (!releaseNotes.isNullOrBlank()) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        MarkdownText(
+                            markdown = releaseNotes,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                } else {
+                    Text("暂无当前版本的更新日志", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("确定") }
+        },
+        dismissButton = {
+            TextButton(onClick = onOpenHistory) { Text("查看全部历史") }
+        },
+    )
 }

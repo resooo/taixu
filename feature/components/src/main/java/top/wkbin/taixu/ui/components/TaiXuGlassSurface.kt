@@ -23,12 +23,17 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
+import top.wkbin.taixu.ui.theme.LocalLiquidGlassSurfaceBackdrop
+import top.wkbin.taixu.ui.components.GlassEffects.liquidGlassSurface
+
 /**
  * 太墟高拟真毛玻璃面板 (TaiXu Glass Surface)
  *
- * 1. 消除暗色模式下死板的粗描边，将整体边框透明度弱化至 0.08f（避免 PPT 描边感）；
- * 2. 顶部独占 1px 镜面受光渐变高光 (Specular Highlight)，模拟真实光打在玻璃顶部的折射；
- * 3. 支持胶囊拼接 (omitTopBorder)，当面板紧贴上方组件时省略顶边与高光，杜绝接缝处双重亮线。
+ * 1. 深度对齐 Apple HIG Materials 与 Kyant Backdrop 规范：当处于澄明（液态玻璃）主题时，
+ *    自动接入 [LocalLiquidGlassSurfaceBackdrop] 渲染真实光学折射与焦散景深；
+ * 2. 顶部独占 1px 镜面受光渐变高光 (Specular Highlight)，还原 Apple 玻璃边缘受光特质；
+ * 3. 支持胶囊拼接 (omitTopBorder)，当面板紧贴上方组件时省略顶边与高光，杜绝接缝处双重亮线；
+ * 4. 非玻璃主题或底层 Backdrop 缺失时，平滑降级为经典细腻微渐变面板。
  */
 @Composable
 fun TaiXuGlassPanel(
@@ -42,6 +47,7 @@ fun TaiXuGlassPanel(
     content: @Composable BoxScope.() -> Unit,
 ) {
     val isDark = forceDark || isSystemInDarkTheme()
+    val glassBackdrop = LocalLiquidGlassSurfaceBackdrop.current
 
     val topTint = if (isDark) {
         MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
@@ -60,14 +66,34 @@ fun TaiXuGlassPanel(
         Color.White.copy(alpha = 0.85f)
     }
 
-    val backgroundBrush = if (surfaceColor != null) {
-        Brush.verticalGradient(listOf(surfaceColor, surfaceColor))
+    val panelModifier = if (glassBackdrop != null) {
+        val glassSurface = surfaceColor ?: if (isDark) {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.38f)
+        } else {
+            Color.White.copy(alpha = 0.50f)
+        }
+        modifier
+            .liquidGlassSurface(
+                backdrop = glassBackdrop,
+                shape = { shape },
+                level = LiquidGlassLevel.Thick,
+                onDrawSurface = { drawRect(glassSurface) },
+            )
+            .clip(shape)
+            .then(
+                if (!omitTopBorder) {
+                    Modifier.border(borderWidth, borderColor.copy(alpha = if (isDark) 0.12f else 0.40f), shape)
+                } else {
+                    Modifier
+                }
+            )
     } else {
-        Brush.verticalGradient(listOf(topTint, bottomTint))
-    }
-
-    Box(
-        modifier = modifier
+        val backgroundBrush = if (surfaceColor != null) {
+            Brush.verticalGradient(listOf(surfaceColor, surfaceColor))
+        } else {
+            Brush.verticalGradient(listOf(topTint, bottomTint))
+        }
+        modifier
             .clip(shape)
             .background(backgroundBrush, shape)
             .then(
@@ -76,8 +102,10 @@ fun TaiXuGlassPanel(
                 } else {
                     Modifier
                 }
-            ),
-    ) {
+            )
+    }
+
+    Box(modifier = panelModifier) {
         content()
 
         // 顶部 1px 镜面高光反射线
@@ -99,3 +127,4 @@ fun TaiXuGlassPanel(
         }
     }
 }
+

@@ -1,31 +1,12 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.taixu.android.library)
 }
+
 android {
     namespace = "top.wkbin.taixu.harness"
-    resourcePrefix = "harness_"
-    compileSdk = 37
 
     defaultConfig {
-        minSdk = 29
-
         consumerProguardFiles("consumer-rules.pro")
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -42,23 +23,15 @@ dependencies {
     implementation(project(":tools"))
     implementation(libs.koin.core)
     implementation(libs.okhttp)
-    implementation(libs.ktor.server.core)
-    implementation(libs.ktor.server.cio)
+    implementation(libs.bundles.ktor.server)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
 
-    testImplementation(libs.junit)
+    testImplementation(libs.bundles.test.robolectric)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.core)
     testImplementation(libs.kotlinx.coroutines.test)
-    testImplementation(libs.robolectric)
-    testImplementation(libs.androidx.test.core)
     // 集成测试需要直接构建 in-memory Room 数据库（core:database 是 implementation 依赖不传递 Room）
-    testImplementation(libs.androidx.room.runtime)
-    testImplementation(libs.androidx.room.ktx)
-    testImplementation(libs.asm)
-    testImplementation(libs.asm.commons)
-    testImplementation(libs.asm.util)
-    testImplementation(libs.asm.tree)
-    testImplementation(libs.asm.analysis)
+    testImplementation(libs.bundles.room)
+    testImplementation(libs.bundles.asm.test)
 }

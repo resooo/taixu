@@ -3,6 +3,7 @@ package top.wkbin.taixu.ui.chat
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import top.wkbin.taixu.core.common.files.BoundedStreamCopy
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -81,10 +82,13 @@ object AttachmentHelper {
 
         return try {
             contentResolver.openInputStream(uri)?.use { input ->
-                targetFile.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
+                BoundedStreamCopy.copyToFile(
+                    input = input,
+                    targetFile = targetFile,
+                    maxBytes = BoundedStreamCopy.DEFAULT_MAX_ATTACHMENT_BYTES,
+                    policy = BoundedStreamCopy.OverflowPolicy.ABORT,
+                )
+            } ?: return null
             if (size == 0L) size = targetFile.length()
 
             val guestPath = "/attachments/${targetFile.name}"
@@ -115,14 +119,20 @@ object AttachmentHelper {
                     val bitmap = android.graphics.BitmapFactory.decodeFile(targetFile.absolutePath, decodeOptions)
                     if (bitmap != null) {
                         val baos = java.io.ByteArrayOutputStream()
-                        bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+                        try {
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 80, baos)
+                        } finally {
+                            bitmap.recycle()
+                        }
                         val bytes = baos.toByteArray()
                         val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                         "data:image/jpeg;base64,$encoded"
-                    } else {
+                    } else if (targetFile.length() <= 4L * 1024 * 1024) {
                         val bytes = targetFile.readBytes()
                         val encoded = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                         "data:$sourceMimeType;base64,$encoded"
+                    } else {
+                        null
                     }
                 }.getOrNull()
             } else null

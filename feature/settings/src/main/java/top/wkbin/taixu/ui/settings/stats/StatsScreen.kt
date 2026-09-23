@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -28,8 +25,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import top.wkbin.taixu.core.model.StatsDateRangePreset
+import top.wkbin.taixu.ui.components.RuntimeButton
 import top.wkbin.taixu.ui.components.RuntimeCard
+import top.wkbin.taixu.ui.components.RuntimeFilterChip
 import top.wkbin.taixu.ui.components.RuntimeIconName
+import top.wkbin.taixu.ui.components.RuntimeLinearProgressIndicator
 import top.wkbin.taixu.ui.components.RuntimeTopBar
 import top.wkbin.taixu.ui.settings.stats.widgets.StatsHeatmap
 import top.wkbin.taixu.ui.settings.stats.widgets.StatsMetricGrid
@@ -75,7 +75,7 @@ fun StatsScreen(
 
                 for ((preset, label) in presets) {
                     val selected = uiState.range.preset == preset
-                    FilterChip(
+                    RuntimeFilterChip(
                         selected = selected,
                         onClick = { viewModel.setDateRangePreset(preset) },
                         label = {
@@ -87,16 +87,12 @@ fun StatsScreen(
                                 ),
                             )
                         },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
                     )
                 }
             }
 
             if (uiState.isLoading) {
-                LinearProgressIndicator(
+                RuntimeLinearProgressIndicator(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(2.dp),
@@ -118,11 +114,11 @@ fun StatsScreen(
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.error,
                             )
-                            FilterChip(
-                                selected = false,
-                                onClick = viewModel::refresh,
-                                label = { Text("重试") },
-                            )
+                            RuntimeButton(
+                                onClick = { viewModel.refresh() },
+                            ) {
+                                Text("重试")
+                            }
                         }
                     }
                 }

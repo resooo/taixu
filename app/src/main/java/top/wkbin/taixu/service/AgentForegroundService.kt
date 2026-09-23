@@ -12,7 +12,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.RemoteInput
@@ -21,6 +20,8 @@ import top.wkbin.taixu.R
 import top.wkbin.taixu.core.database.HarnessSessionRepository
 import top.wkbin.taixu.core.model.SessionRunState
 import top.wkbin.taixu.harness.HarnessLoop
+import top.wkbin.taixu.lifecycle.ProcessingPowerLease
+import top.wkbin.taixu.lifecycle.RuntimeLifecycleSupervisor
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,10 +45,12 @@ class AgentForegroundService : Service() {
 
     val harnessLoop: HarnessLoop by inject()
     val sessionDao: HarnessSessionRepository by inject()
+    val lifeCycleSupervisor: RuntimeLifecycleSupervisor by inject()
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var collecting = false
-    private var processLock: PowerManager.WakeLock? = null
+    /** 当前向 RuntimeLifecycleSupervisor 持有的保活租约（任意会话运行时持有）。 */
+    private var powerLease: ProcessingPowerLease? = null
     private val activeNotifSessionIds = mutableSetOf<String>()
     /** 记录每个会话开始运行的时间戳，用于通知中显示已运行时长。 */
     private val sessionStartTimes = mutableMapOf<String, Long>()
@@ -90,7 +93,7 @@ class AgentForegroundService : Service() {
             }
             else -> {
                 safeStartForeground(PRIMARY_NOTIFICATION_ID, placeholderNotification(getString(R.string.taixu_agent_ready)))
-                acquireProcessLock()
+                acquireLease()
                 if (!collecting) {
                     collecting = true
                     serviceScope.launch {
@@ -102,7 +105,7 @@ class AgentForegroundService : Service() {
                         }.collectLatest { (runStates, statuses) ->
                             val runningEntries = runStates.filter { it.value == SessionRunState.RUNNING }
                             if (runningEntries.isNotEmpty()) {
-                                acquireProcessLock()
+                                acquireLease()
                                 val now = System.currentTimeMillis()
                                 runningEntries.forEach { (sessionId, _) ->
                                     activeNotifSessionIds.add(sessionId)
@@ -130,7 +133,7 @@ class AgentForegroundService : Service() {
                                     val sessionTitle = sessionDao.findById(sessionId)?.title ?: getString(R.string.taixu_agent_default_title)
                                     safeNotify(notifId, completedNotification(sessionId, sessionTitle))
                                 }
-                                releaseProcessLock()
+                                releaseLease()
                                 stopForegroundSafely(STOP_FOREGROUND_DETACH)
                                 stopSelf()
                             }
@@ -146,7 +149,7 @@ class AgentForegroundService : Service() {
 
     override fun onDestroy() {
         stopNotificationRefresh()
-        releaseProcessLock()
+        releaseLease()
         serviceScope.cancel()
         super.onDestroy()
     }
@@ -186,21 +189,18 @@ class AgentForegroundService : Service() {
         latestSessionStatuses.clear()
     }
 
-    private fun acquireProcessLock() {
-        if (processLock?.isHeld == true) return
-        runCatching {
-            val powerManager = getSystemService(PowerManager::class.java)
-            processLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
-                .also { it.acquire(LOCK_TIMEOUT_MS) }
-            Log.i(TAG, "Acquired partial wake lock for agent execution")
-        }.onFailure { Log.w(TAG, "获取进程锁失败", it) }
+    /** 向 [RuntimeLifecycleSupervisor] 申请租约（幂等，已持有时跳过）。 */
+    private fun acquireLease() {
+        if (powerLease != null) return
+        powerLease = lifeCycleSupervisor.acquireLease(LEASE_HOLDER_ID)
+        Log.i(TAG, "Acquired power lease from RuntimeLifecycleSupervisor")
     }
 
-    private fun releaseProcessLock() {
-        val lock = processLock ?: return
-        runCatching { if (lock.isHeld) lock.release() }
-            .onFailure { Log.w(TAG, "释放进程锁失败", it) }
-        processLock = null
+    /** 释放租约；幂等，安全多次调用。 */
+    private fun releaseLease() {
+        powerLease?.close()
+        powerLease = null
+        Log.i(TAG, "Released power lease from RuntimeLifecycleSupervisor")
     }
 
     private fun sessionNotificationId(sessionId: String): Int {
@@ -345,8 +345,7 @@ class AgentForegroundService : Service() {
         private const val LEGACY_CAPSULE_CHANNEL_ID = "taixu-agent-capsule-v4"
         private const val PRIMARY_NOTIFICATION_ID = 2001
         private const val TAG = "AgentForegroundService"
-        private const val WAKE_LOCK_TAG = "taixu:agent-execution"
-        private const val LOCK_TIMEOUT_MS = 4 * 60 * 60 * 1000L
+        private const val LEASE_HOLDER_ID = "agent"
         /** 运行期间通知刷新间隔：2 秒，平滑更新状态与运行时长。 */
         private const val NOTIFICATION_REFRESH_INTERVAL_MS = 2_000L
 

@@ -1,23 +1,10 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.taixu.android.library)
 }
 
 android {
     namespace = "top.wkbin.taixu.runtime.browser"
     resourcePrefix = "rtbrowser_"
-    compileSdk = 37
-    defaultConfig { minSdk = 29 }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
 }
 
 dependencies {
@@ -31,10 +18,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.koin.core)
-    testImplementation(libs.junit)
+    testImplementation(libs.bundles.test.robolectric)
     testImplementation(libs.kotlinx.coroutines.core)
-    testImplementation(libs.androidx.test.core)
-    testImplementation(libs.robolectric)
     // CDP WebSocket 会话测试：MockWebServer 的 withWebSocketUpgrade 提供真实 WS 服务端
     testImplementation(libs.okhttp.mockwebserver)
 }

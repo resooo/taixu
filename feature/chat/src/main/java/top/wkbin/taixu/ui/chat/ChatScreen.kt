@@ -5,7 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.IconButton
+import top.wkbin.taixu.ui.components.RuntimeIconButton as IconButton
 import androidx.compose.ui.text.style.TextOverflow
 import top.wkbin.taixu.harness.workflow.ProactiveWorkflowSuggestion
 import top.wkbin.taixu.ui.components.RuntimeIcon

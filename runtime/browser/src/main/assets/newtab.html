@@ -52,12 +52,21 @@
     background: var(--bg);
     color: var(--fg);
     display: flex;
-    align-items: center;
-    justify-content: center;
     padding: 24px;
     position: relative;
-    overflow: hidden;
     -webkit-tap-highlight-color: transparent;
+  }
+  /* 内容高于视口（分屏内嵌短 WebView）时可整体滚动；margin:auto 保证矮视口居中、高视口也居中 */
+  .wrap {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    margin: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+    animation: rise .5s ease-out both;
   }
   /* 背景微光：浅色为清晨雾面，深色为深空星云 */
   body::before, body::after {
@@ -76,16 +85,6 @@
     width: 50vmax; height: 50vmax;
     bottom: -20vmax; right: -12vmax;
     background: var(--bg-glow-2);
-  }
-  .wrap {
-    position: relative;
-    width: 100%;
-    max-width: 520px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 28px;
-    animation: rise .5s ease-out both;
   }
   @keyframes rise {
     from { opacity: 0; transform: translateY(14px); }
@@ -234,6 +233,13 @@
     color: var(--fg-dim);
     opacity: .55;
     letter-spacing: 0.08em;
+  }
+
+  /* 矮视口（分屏内嵌短 WebView）压缩纵向占位，避免内容溢出过多；需位于 .logo 主规则之后 */
+  @media (max-height: 720px) {
+    body { padding: 16px; }
+    .wrap { gap: 16px; }
+    .logo { width: 64px; height: 64px; }
   }
 </style>
 </head>

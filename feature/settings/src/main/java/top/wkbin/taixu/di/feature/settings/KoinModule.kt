@@ -88,6 +88,8 @@ val featureSettingsModule = module {
             webChatBridgeServer = get(),
             browserPrefs = get(),
             translationManager = get(),
+            skillInstallationManager = getOrNull(),
+            clawHubClient = getOrNull(),
         )
     }
 

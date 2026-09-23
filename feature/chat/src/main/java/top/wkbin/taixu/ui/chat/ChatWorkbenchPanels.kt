@@ -413,6 +413,10 @@ internal fun SubagentResultSheet(
     val toolResults = remember(state.messages) {
         state.messages.filterIsInstance<ToolResult>().associateBy { it.toolCallId }
     }
+    // 悬挂工具调用（发起但没落结果）说明 lane 是被超时/异常打断的，最后一条助手文本只是中途独白，
+    // 不是结论——标题与提示要换掉，避免把"Let me verify…"这类过程话当成最终成果。
+    val interrupted = branch.faulted || state.messages.filterIsInstance<ToolCall>()
+        .any { it.id !in toolResults.keys }
     var processExpanded by rememberSaveable(branchUiKey(branch)) { mutableStateOf(false) }
 
     ModalBottomSheet(
@@ -497,16 +501,35 @@ internal fun SubagentResultSheet(
 
                 item {
                     Text(
-                        stringResource(R.string.chat_subagent_final_result),
+                        stringResource(
+                            if (interrupted) R.string.chat_subagent_partial_result else R.string.chat_subagent_final_result,
+                        ),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
+                        color = if (interrupted) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                     )
                 }
                 item {
                     RuntimeCard(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.38f),
-                        borderColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f),
+                        containerColor = if (interrupted) {
+                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.38f)
+                        } else {
+                            MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.38f)
+                        },
+                        borderColor = if (interrupted) {
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.35f)
+                        } else {
+                            MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)
+                        },
                     ) {
+                        if (interrupted) {
+                            Text(
+                                stringResource(R.string.chat_subagent_partial_hint),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                        }
                         if (finalResult != null) {
                             MarkdownText(finalResult.text, Modifier.fillMaxWidth())
                         } else {

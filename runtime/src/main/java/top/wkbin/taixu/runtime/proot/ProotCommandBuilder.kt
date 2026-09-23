@@ -224,7 +224,7 @@ class ProotCommandBuilder private constructor(
     ) {
         if (mounts.isNotEmpty()) {
             mounts.filter { it.enabled }.forEach { binding ->
-                val argument = validateStorageMount(binding)
+                val argument = validateStorageMount(binding) ?: return@forEach
                 add("-b")
                 add(argument)
             }
@@ -233,7 +233,7 @@ class ProotCommandBuilder private constructor(
 
     private fun validateStorageMount(
         binding: top.wkbin.taixu.core.model.StorageMountBinding,
-    ): String {
+    ): String? {
         require(':' !in binding.hostPath && '\u0000' !in binding.hostPath) { "宿主挂载路径包含非法字符" }
         require(':' !in binding.guestPath && '\u0000' !in binding.guestPath) { "容器挂载路径包含非法字符" }
 
@@ -244,8 +244,11 @@ class ProotCommandBuilder private constructor(
 
         val sharedRoot = File(SHARED_STORAGE_ROOT).canonicalFile
         val host = File(binding.hostPath).canonicalFile
-        require(host.isDirectory && host.canRead()) { "宿主挂载目录不可访问：${binding.hostPath}" }
         require(isInside(sharedRoot, host)) { "宿主挂载仅允许位于 $SHARED_STORAGE_ROOT 内" }
+        if (!host.isDirectory || !host.canRead()) {
+            logWarning("宿主挂载目录不可访问（不存在/非目录/不可读），已跳过绑定：${binding.hostPath}")
+            return null
+        }
         return "${host.absolutePath}:$guest"
     }
 

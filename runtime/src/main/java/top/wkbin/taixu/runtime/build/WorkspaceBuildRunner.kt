@@ -175,7 +175,7 @@ class WorkspaceBuildRunner(
             assetSynchronizer.syncAssetsToDistro(linuxRuntime.activeDistroId.value)
         }
         val boundScript = buildScriptRepository.resolvedScript(project.name)
-            ?.takeIf { it.projectType == project.projectType.name }
+            ?.takeIf { it.projectType == project.projectType.name && !it.isBuiltin }
         val workshopAndroidScript = boundScript?.content
             ?: workshopPreferences.androidScript.first()
         val workshopFlutterScript = boundScript?.content

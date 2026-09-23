@@ -61,6 +61,7 @@ import top.wkbin.taixu.core.network.AppUpdateManager
 import top.wkbin.taixu.runtime.service.RuntimeServiceController
 import top.wkbin.taixu.ui.components.RuntimeIcon
 import top.wkbin.taixu.ui.components.RuntimeIconName
+import top.wkbin.taixu.ui.components.MarkdownText
 import top.wkbin.taixu.ui.navigation.TaiXuNavHost
 import top.wkbin.taixu.ui.theme.TaiXuTheme
 import androidx.core.net.toUri
@@ -222,9 +223,8 @@ class MainActivity : AppCompatActivity() {
                                         shape = RoundedCornerShape(10.dp),
                                         modifier = Modifier.fillMaxWidth(),
                                     ) {
-                                        Text(
-                                            text = info.releaseNotes,
-                                            style = MaterialTheme.typography.bodySmall,
+                                        MarkdownText(
+                                            markdown = info.releaseNotes,
                                             modifier = Modifier.padding(12.dp),
                                         )
                                     }

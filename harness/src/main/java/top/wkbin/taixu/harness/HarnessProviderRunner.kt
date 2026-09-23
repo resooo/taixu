@@ -248,6 +248,73 @@ class HarnessProviderRunner(
                     invalidOutputTokens,
                 )
                 resetStreamBaseline()
+            } catch (contextOverflow: LlmContextOverflowException) {
+                currentCoroutineContext().ensureActive()
+                stateMirrors.setThinkingLive(sessId, false)
+                // 必须位于 IOException 之前：LlmContextOverflowException 本身继承 IOException。
+                // 若先进入通用网络重试分支，413 / context_length_exceeded 只会原样重发，
+                // 永远到不了 overflow -> compact -> replay 的自愈闭环。
+                if (!overflowRecovered) {
+                    overflowRecovered = true
+                    stateMirrors.setStatus(sessId, "上下文超限，正在紧急压缩历史后重试")
+                    agentEventLogger.log(
+                        sessId,
+                        "ContextOverflowRecovery",
+                        "识别到上下文超限，执行紧急压缩：${contextOverflow.message}",
+                        contextOverflow,
+                    )
+                    val recovered = recoverFromContextOverflow(sessId, model)
+                    if (recovered != null) {
+                        agentEventLogger.log(
+                            sessId,
+                            "ContextOverflowRecovery",
+                            "紧急压缩完成：折叠 ${recovered.first} 条，保留 ${recovered.second} 条，重新组装请求重试",
+                        )
+                        resetStreamBaseline()
+                        requestMessages = assembleFor(requestModel)
+                        continue
+                    }
+                }
+                val pendingImages = requestMessages.sumOf { it.imageUrls.size }
+                if (!imageStripped && pendingImages > 0) {
+                    imageStripped = true
+                    // 故意不调 assembleFor 重算：走到这里说明紧急压缩已失败/无效（持久层消息仍带图片），
+                    // 重新组装会把图片原样带回，立即再次超限。内存剥离是唯一能真正降低请求体积的手段
+                    requestMessages = requestMessages.map { it.copy(imageUrls = emptyList()) }
+                    agentEventLogger.log(
+                        sessId,
+                        "ContextOverflowImageStrip",
+                        "紧急压缩后仍超限，剥离 $pendingImages 张图片降级重试",
+                        contextOverflow,
+                    )
+                    resetStreamBaseline()
+                    continue
+                }
+                // 与 ModelError 路径一致：已流式产出的半截内容先落库保留，避免静默丢弃
+                if (streamText.length > 0) {
+                    persistAssistant(
+                        sessId,
+                        assistantId,
+                        assistantAt,
+                        streamText.toString(),
+                        streamReasoning.toString().ifBlank { null },
+                        totalMs = now() - startedAt,
+                        operationId = operationId,
+                        round = round,
+                    )
+                } else {
+                    messageProjector.remove(sessId, assistantId)
+                }
+                agentEventLogger.log(
+                    sessId,
+                    "ContextOverflowUnrecoverable",
+                    "上下文超限且压缩/剥离图片均无法恢复",
+                    contextOverflow,
+                )
+                return TurnProviderOutcome.Failed(
+                    "上下文超出模型窗口，自动压缩后仍无法恢复。" +
+                        "可以让模型用 compress 工具手动压缩，或切换到更大上下文窗口的模型后重试。",
+                )
             } catch (io: IOException) {
                 // 用户取消会主动关闭 socket，通常以 IOException 形式抛出：先按取消语义保留已生成内容，再传播取消。
                 if (!currentCoroutineContext().isActive) {
@@ -278,45 +345,6 @@ class HarnessProviderRunner(
                 delay(retryPolicy.delayForRetry(netRetry).milliseconds)
             } catch (throwable: Throwable) {
                 stateMirrors.setThinkingLive(sessId, false)
-                // 上下文超限自愈闭环（对齐 opencode 的 overflow → compact → replay）：
-                // 杠杆 1 = 紧急机械压缩（每轮至多一次）；杠杆 2 = 剥离图片输入。
-                // 两个杠杆都用尽仍超限才判失败——预算估算偏差、元数据缺 contextTokens、
-                // 当前轮巨型工具输出等场景不该直接把 400 甩给用户。
-                if (throwable is LlmContextOverflowException) {
-                    currentCoroutineContext().ensureActive()
-                    if (!overflowRecovered) {
-                        overflowRecovered = true
-                        stateMirrors.setStatus(sessId, "上下文超限，正在紧急压缩历史后重试")
-                        agentEventLogger.log(sessId, "ContextOverflowRecovery", "识别到上下文超限，执行紧急压缩：${throwable.message}", throwable)
-                        val recovered = recoverFromContextOverflow(sessId, model)
-                        if (recovered != null) {
-                            agentEventLogger.log(
-                                sessId, "ContextOverflowRecovery",
-                                "紧急压缩完成：折叠 ${recovered.first} 条，保留 ${recovered.second} 条，重新组装请求重试",
-                            )
-                            resetStreamBaseline()
-                            requestMessages = assembleFor(requestModel)
-                            continue
-                        }
-                    }
-                    val pendingImages = requestMessages.sumOf { it.imageUrls.size }
-                    if (!imageStripped && pendingImages > 0) {
-                        imageStripped = true
-                        requestMessages = requestMessages.map { it.copy(imageUrls = emptyList()) }
-                        agentEventLogger.log(
-                            sessId, "ContextOverflowImageStrip",
-                            "紧急压缩后仍超限，剥离 $pendingImages 张图片降级重试", throwable,
-                        )
-                        resetStreamBaseline()
-                        continue
-                    }
-                    messageProjector.remove(sessId, assistantId)
-                    agentEventLogger.log(sessId, "ContextOverflowUnrecoverable", "上下文超限且压缩/剥离图片均无法恢复", throwable)
-                    return TurnProviderOutcome.Failed(
-                        "上下文超出模型窗口，自动压缩后仍无法恢复。" +
-                            "可以让模型用 compress 工具手动压缩，或切换到更大上下文窗口的模型后重试。",
-                    )
-                }
                 // 模型不支持图片输入（HTTP 400）时，剥离全部图片降级重试一次，避免整轮中断
                 val lowerMsg = throwable.message.orEmpty().lowercase()
                 val pendingImages = requestMessages.sumOf { it.imageUrls.size }

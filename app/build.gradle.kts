@@ -6,8 +6,8 @@ import java.util.Properties
 import org.gradle.kotlin.dsl.configure
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val appVersionName = "0.17.0"
-val appVersionCode = 25
+val appVersionName = "0.18.0"
+val appVersionCode = 26
 
 // TaiXuDev 双包构建开关：CI（.github/workflows/taixudev-build.yml）设 TAIXU_DEV_BUILD=1 时，
 // 产出独立预览包 top.wkbin.taixu.dev / 应用名 TaiXuDev / 版本后缀 -dev，
@@ -15,16 +15,15 @@ val appVersionCode = 25
 val taiXuDevBuild = System.getenv("TAIXU_DEV_BUILD") == "1"
 
 plugins {
-    alias(libs.plugins.android.application)
+    alias(libs.plugins.taixu.android.application)
+    alias(libs.plugins.taixu.android.application.compose)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.androidx.baselineprofile)
 }
 
 extensions.configure<ApplicationExtension> {
     namespace = "top.wkbin.taixu"
     resourcePrefix = "taixu_"
-    compileSdk = 37
     ndkVersion = "30.0.15729638"
 
     defaultConfig {
@@ -115,15 +114,6 @@ extensions.configure<ApplicationExtension> {
         }
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    buildFeatures {
-        compose = true
-    }
-
     packaging {
         dex {
             useLegacyPackaging = true
@@ -150,12 +140,6 @@ extensions.configure<ApplicationExtension> {
                 "META-INF/notice.txt"
             )
         }
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
@@ -193,20 +177,16 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.activity.compose)
 
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material3)
+    implementation(libs.bundles.compose.ui)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
 
-    implementation(libs.koin.android)
-    implementation(libs.koin.compose.viewmodel)
+    implementation(libs.bundles.koin.compose)
     // 工作流定时计划：WorkManager 到点触发 + Koin Worker 注入
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.koin.workmanager)
 
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
+    implementation(libs.bundles.room)
 
     implementation(libs.shizuku.provider)
 
@@ -217,22 +197,13 @@ dependencies {
         artifact { type = "aar" }
     }
     implementation(libs.kotlinx.serialization.json)
-    implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.bundles.coroutines)
 
-    testImplementation(libs.junit)
+    testImplementation(libs.bundles.test.robolectric)
     testImplementation(libs.koin.test)
     testImplementation(libs.androidx.work.testing)
-    testImplementation(libs.robolectric)
-    testImplementation(libs.androidx.test.core)
     // Robolectric on Java 25 requires the same ASM override as core:database.
-    testImplementation(libs.asm)
-    testImplementation(libs.asm.commons)
-    testImplementation(libs.asm.util)
-    testImplementation(libs.asm.tree)
-    testImplementation(libs.asm.analysis)
-
-    debugImplementation(libs.androidx.compose.ui.tooling)
+    testImplementation(libs.bundles.asm.test)
 }
 
 val bundledProot = layout.projectDirectory.file(

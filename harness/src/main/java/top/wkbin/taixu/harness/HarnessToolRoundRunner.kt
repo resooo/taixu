@@ -75,6 +75,12 @@ class HarnessToolRoundRunner(
         output: String,
     ) {
         val toolCallId = ToolCallIdNormalizer.normalize(spec.id)
+        // 拦截类结果只进消息流不进事件日志的话，日志里会出现「响应带 toolCall 却无 ToolCall 记录」的假象
+        agentEventLogger.log(
+            sessId,
+            "ToolCallRejected",
+            "Tool=${tool.name}, CallId=$toolCallId, RawTool=${rawToolName ?: "unknown"}: $output",
+        )
         messageProjector.append(
             sessId,
             ToolCall(

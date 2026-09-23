@@ -1,30 +1,12 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.taixu.android.library)
 }
 
 android {
     namespace = "top.wkbin.taixu.runtime"
-    resourcePrefix = "runtime_"
-    compileSdk = 37
-
-    defaultConfig {
-        minSdk = 29
-    }
 
     buildFeatures {
         aidl = true
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
-
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
 }
 
@@ -44,8 +26,7 @@ dependencies {
     implementation("com.github.luben:zstd-jni:${libs.versions.zstd.get()}@aar")
     implementation(libs.xz)
     implementation(libs.okhttp)
-    implementation(libs.shizuku.api)
-    implementation(libs.shizuku.provider)
+    implementation(libs.bundles.shizuku)
     implementation(libs.hiddenapi.bypass)
     implementation(libs.kadb)
     // Termux VT100 emulator + PTY JNI (GPL-3.0). Exported so feature/terminal can attach TerminalView.

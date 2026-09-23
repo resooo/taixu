@@ -94,6 +94,8 @@ class SettingsViewModel(
     private val webChatBridgeServer: top.wkbin.taixu.runtime.webchat.WebChatBridgeServer? = null,
     private val browserPrefs: BrowserPreferences,
     private val translationManager: top.wkbin.taixu.core.common.translation.TranslationManager,
+    private val skillInstallationManager: top.wkbin.taixu.core.tools.skill.SkillInstallationManager? = null,
+    private val clawHubClient: top.wkbin.taixu.core.tools.skill.ClawHubClient? = null,
 ) : ViewModel() {
     val installedDistros = linuxRuntime.installedDistros
     val activeDistroId = linuxRuntime.activeDistroId
@@ -115,6 +117,7 @@ class SettingsViewModel(
             agentSkillRepository.ensureInitialized()
             mcpServerRepository.ensureInitialized()
             quickPhraseRepository.ensureInitialized()
+            loadClawHubMarket()
         }
         viewModelScope.launch {
             combine(linuxRuntime.state, linuxRuntime.activeDistroId) { state, distroId ->
@@ -296,6 +299,27 @@ class SettingsViewModel(
         _updateCheckState.value = top.wkbin.taixu.core.model.UpdateCheckState.Idle
         _downloadProgress.value = null
         _isDownloading.value = false
+    }
+
+    private val _currentReleaseNotes = MutableStateFlow<String?>(null)
+    val currentReleaseNotes: StateFlow<String?> = _currentReleaseNotes.asStateFlow()
+
+    private val _isLoadingReleaseNotes = MutableStateFlow(false)
+    val isLoadingReleaseNotes: StateFlow<Boolean> = _isLoadingReleaseNotes.asStateFlow()
+
+    fun loadCurrentReleaseNotes(currentVersion: String) {
+        viewModelScope.launch {
+            _isLoadingReleaseNotes.value = true
+            val bundled = appUpdateManager.getBundledReleaseNotes()
+            if (bundled.isNotBlank()) {
+                _currentReleaseNotes.value = bundled
+            }
+            val latestNotes = appUpdateManager.getOrFetchCurrentReleaseNotes(currentVersion)
+            if (latestNotes.isNotBlank()) {
+                _currentReleaseNotes.value = latestNotes
+            }
+            _isLoadingReleaseNotes.value = false
+        }
     }
 
     fun switchActiveDistro(distroId: String) {
@@ -709,14 +733,25 @@ class SettingsViewModel(
         viewModelScope.launch { agentPreferences.setCustomSystemPrompt(prompt) }
     }
 
+    val agentCharName: StateFlow<String> = agentPreferences.agentCharName
+        .stateIn(viewModelScope, SharingStarted.Eagerly, top.wkbin.taixu.core.datastore.SettingsDataStore.DEFAULT_AGENT_CHAR_NAME)
+
+    fun setAgentCharName(name: String) {
+        viewModelScope.launch { agentPreferences.setAgentCharName(name) }
+    }
+
+    val agentUserName: StateFlow<String> = agentPreferences.agentUserName
+        .stateIn(viewModelScope, SharingStarted.Eagerly, top.wkbin.taixu.core.datastore.SettingsDataStore.DEFAULT_AGENT_USER_NAME)
+
+    fun setAgentUserName(name: String) {
+        viewModelScope.launch { agentPreferences.setAgentUserName(name) }
+    }
+
     val defaultReasoningDepth: StateFlow<String> = agentPreferences.defaultReasoningDepth
         .stateIn(viewModelScope, SharingStarted.Eagerly, "auto")
 
     val contextCompactionEnabled: StateFlow<Boolean> = agentPreferences.contextCompactionEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
-
-    val contextCompactionThreshold: StateFlow<Int> = agentPreferences.contextCompactionThreshold
-        .stateIn(viewModelScope, SharingStarted.Eagerly, 15)
 
     val maxToolRounds: StateFlow<Int> = agentPreferences.maxToolRounds
         .stateIn(viewModelScope, SharingStarted.Eagerly, 100)
@@ -790,6 +825,123 @@ class SettingsViewModel(
     private val _skillArchiveMessageIsError = MutableStateFlow(false)
     val skillArchiveMessageIsError: StateFlow<Boolean> = _skillArchiveMessageIsError.asStateFlow()
 
+    // ClawHub 市场与端侧静态安全审计状态
+    private val _clawHubMarketSkills = MutableStateFlow<List<top.wkbin.taixu.core.model.skill.ClawHubMarketItem>>(emptyList())
+    val clawHubMarketSkills: StateFlow<List<top.wkbin.taixu.core.model.skill.ClawHubMarketItem>> = _clawHubMarketSkills.asStateFlow()
+
+    private val _isMarketLoading = MutableStateFlow(false)
+    val isMarketLoading: StateFlow<Boolean> = _isMarketLoading.asStateFlow()
+
+    /** 当前市场列表是否来自内置离线精选包（远端 ClawHub 未接入或不可达）。 */
+    private val _isMarketOfflinePreset = MutableStateFlow(true)
+    val isMarketOfflinePreset: StateFlow<Boolean> = _isMarketOfflinePreset.asStateFlow()
+
+    private val _isPreparingInstall = MutableStateFlow(false)
+    val isPreparingInstall: StateFlow<Boolean> = _isPreparingInstall.asStateFlow()
+
+    private val _preparingSkillId = MutableStateFlow<String?>(null)
+    val preparingSkillId: StateFlow<String?> = _preparingSkillId.asStateFlow()
+
+    private val _isCommittingInstallation = MutableStateFlow(false)
+    val isCommittingInstallation: StateFlow<Boolean> = _isCommittingInstallation.asStateFlow()
+
+    private val _pendingSkillInspection = MutableStateFlow<top.wkbin.taixu.core.tools.skill.SkillInstallInspection?>(null)
+    val pendingSkillInspection: StateFlow<top.wkbin.taixu.core.tools.skill.SkillInstallInspection?> = _pendingSkillInspection.asStateFlow()
+
+    fun loadClawHubMarket(query: String? = null, category: String? = null) {
+        val client = clawHubClient ?: return
+        viewModelScope.launch {
+            _isMarketLoading.value = true
+            when (val res = client.fetchMarketCatalog(query, category)) {
+                is top.wkbin.taixu.core.common.result.AppResult.Success -> {
+                    val installedIds = allSkills.value.map { it.id.removePrefix("custom_") }.toSet()
+                    _clawHubMarketSkills.value = res.data.map { item ->
+                        item.copy(isInstalled = item.id in installedIds || "custom_${item.id}" in allSkills.value.map { it.id }.toSet())
+                    }
+                    _isMarketOfflinePreset.value = client.lastCatalogUsedOfflineFallback
+                }
+                is top.wkbin.taixu.core.common.result.AppResult.Failure -> {
+                    logger.w("加载 ClawHub 技能市场失败: ${res.error.message}", res.error.cause)
+                }
+            }
+            _isMarketLoading.value = false
+        }
+    }
+
+    fun prepareInstallMarketSkill(skillId: String) {
+        val installer = skillInstallationManager ?: run {
+            _skillArchiveMessage.value = "技能安全审计与安装引擎未就绪"
+            _skillArchiveMessageIsError.value = true
+            return
+        }
+        if (_isPreparingInstall.value) return
+        viewModelScope.launch {
+            _isPreparingInstall.value = true
+            _preparingSkillId.value = skillId
+            when (val res = installer.prepareMarketSkill(skillId)) {
+                is top.wkbin.taixu.core.common.result.AppResult.Success -> {
+                    _pendingSkillInspection.value = res.data
+                }
+                is top.wkbin.taixu.core.common.result.AppResult.Failure -> {
+                    _skillArchiveMessage.value = "准备技能失败: ${res.error.message}"
+                    _skillArchiveMessageIsError.value = true
+                }
+            }
+            _isPreparingInstall.value = false
+            _preparingSkillId.value = null
+        }
+    }
+
+    fun inspectLocalSkillZip(uri: Uri) {
+        val installer = skillInstallationManager ?: run {
+            importSkillArchives(listOf(uri))
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val bos = java.io.ByteArrayOutputStream()
+                application.contentResolver.openInputStream(uri)?.use { stream ->
+                    top.wkbin.taixu.core.common.files.BoundedStreamCopy.copy(
+                        input = stream,
+                        output = bos,
+                        maxBytes = top.wkbin.taixu.core.tools.skill.SkillPackageParser.MAX_ZIP_TOTAL_BYTES,
+                        policy = top.wkbin.taixu.core.common.files.BoundedStreamCopy.OverflowPolicy.ABORT,
+                    )
+                } ?: error("无法读取所选 ZIP 文件")
+                val inspection = installer.inspectZipBytes(bos.toByteArray(), fallbackId = "custom_zip")
+                _pendingSkillInspection.value = inspection
+            } catch (e: Throwable) {
+                _skillArchiveMessage.value = "解析或审计技能包失败: ${e.message}"
+                _skillArchiveMessageIsError.value = true
+            }
+        }
+    }
+
+    fun confirmSkillInstallation() {
+        val inspection = _pendingSkillInspection.value ?: return
+        val installer = skillInstallationManager ?: return
+        if (!_isCommittingInstallation.compareAndSet(expect = false, update = true)) return
+        viewModelScope.launch {
+            try {
+                val skillsDir = File(pathManager.attachmentsDir, "skills").apply { mkdirs() }
+                val skill = installer.commitInstallation(inspection, skillsDir)
+                _skillArchiveMessage.value = "技能“${skill.name}”已通过端侧静态审查并成功安装！"
+                _skillArchiveMessageIsError.value = false
+                _pendingSkillInspection.value = null
+                loadClawHubMarket()
+            } catch (e: Throwable) {
+                _skillArchiveMessage.value = "安装失败: ${e.message}"
+                _skillArchiveMessageIsError.value = true
+            } finally {
+                _isCommittingInstallation.value = false
+            }
+        }
+    }
+
+    fun dismissSkillInspection() {
+        _pendingSkillInspection.value = null
+    }
+
     val autoSubagentDelegationEnabled: StateFlow<Boolean> = subagentRepository.autoDelegationEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
@@ -816,10 +968,6 @@ class SettingsViewModel(
 
     fun setContextCompactionEnabled(value: Boolean) {
         viewModelScope.launch { agentPreferences.setContextCompactionEnabled(value) }
-    }
-
-    fun setContextCompactionThreshold(value: Int) {
-        viewModelScope.launch { agentPreferences.setContextCompactionThreshold(value) }
     }
 
     fun setMaxToolRounds(value: Int) {

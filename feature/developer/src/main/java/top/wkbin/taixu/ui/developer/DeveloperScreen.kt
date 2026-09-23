@@ -59,6 +59,7 @@ import top.wkbin.taixu.runtime.bridge.adb.EmbeddedAdbManager
 @Composable
 fun DeveloperScreen(
     onBack: () -> Unit,
+    onOpenCatalog: () -> Unit = {},
     viewModel: DeveloperViewModel = koinViewModel(),
 ) {
     val runtimeState by viewModel.runtimeState.collectAsStateWithLifecycle()
@@ -118,6 +119,37 @@ fun DeveloperScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             Spacer(Modifier.height(4.dp))
+
+            RuntimeCard(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        IconTile(RuntimeIconName.Sparkles)
+                        Column {
+                            Text("液态玻璃全景组件图鉴", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "Apple HIG / Kyant Backdrop 规范对比与全套控件展厅",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Button(onClick = onOpenCatalog) {
+                        Text("进入展厅")
+                    }
+                }
+            }
 
             RuntimeControlCard(
                 state = runtimeState,

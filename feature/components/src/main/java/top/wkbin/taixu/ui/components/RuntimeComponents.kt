@@ -54,6 +54,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
+import androidx.compose.material3.FloatingActionButtonElevation
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
@@ -88,6 +93,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
@@ -715,6 +721,7 @@ fun RuntimeCard(
     shape: Shape = RoundedCornerShape(16.dp),
     onClick: (() -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(16.dp),
+    exportedBackdrop: LayerBackdrop? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val glassBackdrop = LocalLiquidGlassSurfaceBackdrop.current
@@ -731,27 +738,31 @@ fun RuntimeCard(
         )
         val density = LocalDensity.current
         val glassModifier = modifier
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
             .drawBackdrop(
                 backdrop = glassBackdrop,
                 shape = { shape },
                 effects = {
                     vibrancy()
-                    blur(6.dp.toPx(), edgeTreatment = TileMode.Mirror)
-                    lens(16.dp.toPx(), 32.dp.toPx(), depthEffect = true)
+                    blur(LiquidGlassLevel.Thick.blurRadius.toPx(), edgeTreatment = TileMode.Mirror)
+                    lens(
+                        refractionHeight = LiquidGlassLevel.Thick.lensMin.toPx(),
+                        refractionAmount = LiquidGlassLevel.Thick.lensMax.toPx(),
+                        depthEffect = LiquidGlassLevel.Thick.depthEffect,
+                    )
                 },
-                highlight = { Highlight.Default },
-                shadow = { Shadow(radius = 12.dp, alpha = 0.08f) },
-                innerShadow = { InnerShadow(radius = 6.dp, alpha = 0.06f) },
+                highlight = { Highlight.Default.copy(alpha = LiquidGlassLevel.Thick.highlightAlpha) },
+                shadow = { Shadow(radius = LiquidGlassLevel.Thick.shadowRadius, alpha = LiquidGlassLevel.Thick.shadowAlpha) },
+                innerShadow = { InnerShadow(radius = LiquidGlassLevel.Thick.innerShadowRadius, alpha = LiquidGlassLevel.Thick.innerShadowAlpha) },
+                exportedBackdrop = exportedBackdrop,
+                layerBlock = {
+                    scaleX = scale
+                    scaleY = scale
+                },
                 onDrawSurface = {
                     val safeAlpha = if (containerColor.alpha == 1f) 0.22f else minOf(containerColor.alpha, 0.28f)
                     drawRoundRect(containerColor.copy(alpha = safeAlpha))
                 },
             )
-
             .clip(shape)
             .then(
                 if (onClick == null) Modifier
@@ -763,6 +774,7 @@ fun RuntimeCard(
             )
         Column(glassModifier.padding(contentPadding), content = content)
     } else if (onClick == null) {
+
         Card(
             modifier = modifier,
             shape = shape,
@@ -1158,21 +1170,26 @@ fun RuntimeTextButton(
         val foreground = if (enabled) colors.contentColor else colors.disabledContentColor
         Row(
             modifier = modifier
-                .graphicsLayer {
-                    scaleX = if (pressed) 1.04f else 1f
-                    scaleY = if (pressed) 1.04f else 1f
-                    alpha = if (enabled) 1f else 0.48f
-                }
                 .clip(shape)
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { shape },
                     effects = {
                         vibrancy()
-                        blur(2.dp.toPx())
-                        lens(6.dp.toPx(), 10.dp.toPx(), depthEffect = true)
+                        blur(LiquidGlassLevel.UltraThin.blurRadius.toPx())
+                        lens(
+                            refractionHeight = LiquidGlassLevel.UltraThin.lensMin.toPx(),
+                            refractionAmount = LiquidGlassLevel.UltraThin.lensMax.toPx(),
+                            depthEffect = true,
+                        )
                     },
-                    highlight = { Highlight.Default.copy(alpha = if (pressed) 0.50f else 0.20f) },
+                    highlight = { Highlight.Default.copy(alpha = if (pressed) 0.45f else 0.18f) },
+                    innerShadow = { InnerShadow(radius = 2.dp, alpha = if (pressed) 0.08f else 0.04f) },
+                    layerBlock = {
+                        scaleX = if (pressed) 1.04f else 1f
+                        scaleY = if (pressed) 1.04f else 1f
+                        alpha = if (enabled) 1f else 0.48f
+                    },
                     onDrawSurface = { drawRoundRect(colors.containerColor.copy(alpha = 0.16f)) },
                 )
                 .clickable(
@@ -1213,30 +1230,52 @@ fun RuntimeIconButton(
             content = content,
         )
     } else {
+        val interactionSource = remember { MutableInteractionSource() }
+        val pressed by interactionSource.collectIsPressedAsState()
+        val scale by animateFloatAsState(
+            targetValue = if (pressed) 0.92f else 1f,
+            animationSpec = tween(120, easing = FastOutSlowInEasing),
+            label = "glassIconScale",
+        )
         Box(
             modifier = modifier
                 // 玻璃主题分支同样保证 ≥48dp 最小触摸目标（Material 分支由 IconButton 内部保证）
                 .minimumInteractiveComponentSize()
                 .size(40.dp)
-                .graphicsLayer { alpha = if (enabled) 1f else 0.45f }
                 .clip(CircleShape)
                 .drawBackdrop(
                     backdrop = backdrop,
                     shape = { CircleShape },
                     effects = {
                         vibrancy()
-                        blur(2.dp.toPx())
-                        lens(8.dp.toPx(), 14.dp.toPx(), depthEffect = true)
+                        blur(LiquidGlassLevel.UltraThin.blurRadius.toPx())
+                        lens(
+                            refractionHeight = LiquidGlassLevel.UltraThin.lensMin.toPx(),
+                            refractionAmount = LiquidGlassLevel.UltraThin.lensMax.toPx(),
+                            depthEffect = true,
+                        )
                     },
-                    highlight = { Highlight.Default },
-                    shadow = { Shadow(radius = 4.dp, alpha = 0.10f) },
+                    highlight = { Highlight.Default.copy(alpha = if (pressed) 0.40f else 0.25f) },
+                    shadow = { Shadow(radius = 4.dp, alpha = 0.08f) },
+                    innerShadow = { InnerShadow(radius = 2.dp, alpha = 0.08f) },
+                    layerBlock = {
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = if (enabled) 1f else 0.45f
+                    },
                     onDrawSurface = { drawCircle(glassSurfaceColor) },
                 )
                 .semantics {
                     accessibilityLabel?.let { this.contentDescription = it }
                 }
-                .clickable(enabled = enabled, onClick = onClick),
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
             contentAlignment = Alignment.Center,
+
         ) { CompositionLocalProvider(LocalContentColor provides contentColor, content = content) }
     }
 }
@@ -1846,10 +1885,12 @@ fun RuntimeAlertDialog(
     }
 
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest) {
-        val shape = RoundedCornerShape(36.dp)
+        val shape = RoundedCornerShape(32.dp)
         val isLightTheme = MaterialTheme.colorScheme.onSurface.luminance() < 0.5f
-        val dialogSurfaceColor = if (isLightTheme) Color(0xFFFAFAFA).copy(alpha = 0.35f)
-        else Color(0xFF121212).copy(alpha = 0.30f)
+        val dialogSurfaceColor = if (isLightTheme) Color(0xFFFCFCFD).copy(alpha = 0.92f)
+        else Color(0xFF18181C).copy(alpha = 0.88f)
+        val borderColor = if (isLightTheme) Color.White.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.18f)
+
         Column(
             modifier = modifier
                 .fillMaxWidth()
@@ -1857,47 +1898,53 @@ fun RuntimeAlertDialog(
                 .wrapContentHeight(Alignment.Top)
                 .imePadding()
                 .heightIn(max = 560.dp)
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { shape },
-                    effects = {
-                        colorControls(
-                            brightness = if (isLightTheme) 0.12f else 0f,
-                            saturation = 1.4f,
-                        )
-                        blur(12.dp.toPx(), edgeTreatment = TileMode.Mirror)
-                        lens(24.dp.toPx(), 48.dp.toPx(), chromaticAberration = true, depthEffect = true)
-                    },
-                    highlight = { Highlight.Plain },
-                    shadow = { Shadow(radius = 20.dp, alpha = 0.16f) },
-                    innerShadow = { InnerShadow(radius = 10.dp, alpha = 0.12f) },
-                    onDrawSurface = {
-                        drawRoundRect(dialogSurfaceColor)
-                    },
+                .shadow(elevation = 24.dp, shape = shape, spotColor = Color.Black.copy(alpha = 0.30f))
+                .clip(shape)
+                .background(dialogSurfaceColor)
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        listOf(borderColor, borderColor.copy(alpha = 0.08f)),
+                    ),
+                    shape = shape,
                 )
+                .drawWithContent {
+                    drawContent()
+                    drawLine(
+                        brush = Brush.horizontalGradient(
+                            listOf(Color.Transparent, borderColor, Color.Transparent),
+                        ),
+                        start = Offset(24.dp.toPx(), 0.5f),
+                        end = Offset(size.width - 24.dp.toPx(), 0.5f),
+                        strokeWidth = 1.dp.toPx(),
+                    )
+                }
                 .padding(horizontal = 24.dp, vertical = 22.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (icon != null || title != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    icon?.invoke()
-                    title?.invoke()
+            CompositionLocalProvider(LocalLiquidGlassSurfaceBackdrop provides null) {
+                if (icon != null || title != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        icon?.invoke()
+                        title?.invoke()
+                    }
                 }
-            }
-            Box(modifier = Modifier.weight(1f, fill = false)) {
-                text?.invoke()
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                dismissButton?.invoke()
-                confirmButton()
+                Box(modifier = Modifier.weight(1f, fill = false)) {
+                    text?.invoke()
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    dismissButton?.invoke()
+                    confirmButton()
+                }
             }
         }
     }
 }
+
 
 /**
  * 呼吸状态指示药丸
@@ -2266,3 +2313,232 @@ fun ScrollFadeOverlay(
         }
     }
 }
+
+/**
+ * 主题自适应悬浮操作按钮 (M3 Floating Action Button)：
+ * - Material You 下：遵循 M3 规范，尺寸 56dp，形状 RoundedCornerShape(16.dp)，默认 primaryContainer / onPrimaryContainer 配色与 3dp 色调海拔；
+ * - 澄明（液态玻璃）下：透镜折射底层流光、SDF 高光与按压惯性形变。
+ */
+@Composable
+fun RuntimeFloatingActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(16.dp),
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    elevation: FloatingActionButtonElevation = FloatingActionButtonDefaults.elevation(
+        defaultElevation = 3.dp,
+        pressedElevation = 6.dp,
+    ),
+    content: @Composable () -> Unit,
+) {
+    val backdrop = LocalLiquidGlassSurfaceBackdrop.current
+    if (backdrop == null) {
+        FloatingActionButton(
+            onClick = onClick,
+            modifier = modifier,
+            shape = shape,
+            containerColor = containerColor,
+            contentColor = contentColor,
+            elevation = elevation,
+            content = content,
+        )
+    } else {
+        val interactionSource = remember { MutableInteractionSource() }
+        val pressed by interactionSource.collectIsPressedAsState()
+        val scale by animateFloatAsState(
+            targetValue = if (pressed) 0.94f else 1f,
+            animationSpec = tween(150, easing = FastOutSlowInEasing),
+            label = "glassFabScale",
+        )
+        Box(
+            modifier = modifier
+                .minimumInteractiveComponentSize()
+                .size(56.dp)
+                .clip(shape)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { shape },
+                    effects = {
+                        vibrancy()
+                        blur(LiquidGlassLevel.Regular.blurRadius.toPx())
+                        lens(
+                            refractionHeight = LiquidGlassLevel.Regular.lensMin.toPx(),
+                            refractionAmount = LiquidGlassLevel.Regular.lensMax.toPx(),
+                            depthEffect = LiquidGlassLevel.Regular.depthEffect,
+                            chromaticAberration = true,
+                        )
+                    },
+                    highlight = { Highlight.Default.copy(alpha = LiquidGlassLevel.Regular.highlightAlpha) },
+                    shadow = { Shadow(radius = LiquidGlassLevel.Regular.shadowRadius, alpha = LiquidGlassLevel.Regular.shadowAlpha) },
+                    innerShadow = { InnerShadow(radius = LiquidGlassLevel.Regular.innerShadowRadius, alpha = LiquidGlassLevel.Regular.innerShadowAlpha) },
+                    layerBlock = {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                    onDrawSurface = {
+                        drawRoundRect(containerColor, blendMode = BlendMode.Hue)
+                        drawRoundRect(containerColor.copy(alpha = 0.55f))
+                    },
+                )
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                content()
+            }
+        }
+    }
+}
+
+/**
+ * 主题自适应小型悬浮操作按钮 (M3 Small Floating Action Button)：
+ * 遵循 M3 规范：尺寸 40dp，形状 RoundedCornerShape(12.dp)。
+ */
+@Composable
+fun RuntimeSmallFloatingActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(12.dp),
+    containerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    contentColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    elevation: FloatingActionButtonElevation = FloatingActionButtonDefaults.elevation(
+        defaultElevation = 3.dp,
+        pressedElevation = 6.dp,
+    ),
+    content: @Composable () -> Unit,
+) {
+    RuntimeFloatingActionButton(
+        onClick = onClick,
+        modifier = modifier.size(40.dp),
+        shape = shape,
+        containerColor = containerColor,
+        contentColor = contentColor,
+        elevation = elevation,
+        content = content,
+    )
+}
+
+/**
+ * 主题自适应过滤标签 (M3 Filter Chip)：
+ * - 遵循 M3 规范：高度 32dp，形状 RoundedCornerShape(8.dp)，文字 labelMedium；
+ * - 包含 minimumInteractiveComponentSize() 满足 48dp 触控标准；
+ * - 澄明主题下自适应磨砂玻璃与按压缩放。
+ */
+@Composable
+fun RuntimeFilterChip(
+    selected: Boolean,
+    onClick: () -> Unit,
+    label: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    leadingIcon: (@Composable () -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null,
+    shape: Shape = RoundedCornerShape(8.dp),
+) {
+    val backdrop = LocalLiquidGlassSurfaceBackdrop.current
+    if (backdrop == null) {
+        FilterChip(
+            selected = selected,
+            onClick = onClick,
+            label = label,
+            modifier = modifier,
+            enabled = enabled,
+            leadingIcon = leadingIcon,
+            trailingIcon = trailingIcon,
+            shape = shape,
+            colors = FilterChipDefaults.filterChipColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+                labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                selectedLeadingIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+            ),
+        )
+    } else {
+        val interactionSource = remember { MutableInteractionSource() }
+        val pressed by interactionSource.collectIsPressedAsState()
+        val scale by animateFloatAsState(
+            targetValue = if (pressed) 0.96f else 1f,
+            animationSpec = tween(120, easing = FastOutSlowInEasing),
+            label = "glassChipScale",
+        )
+        val containerColor = if (selected) {
+            MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.38f)
+        } else {
+            MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = 0.20f)
+        }
+        val contentColor = if (selected) {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        val borderColor = if (selected) Color.Transparent else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+
+        Box(
+            modifier = modifier
+                .minimumInteractiveComponentSize()
+                .height(32.dp)
+                .clip(shape)
+                .drawBackdrop(
+                    backdrop = backdrop,
+                    shape = { shape },
+                    effects = {
+                        vibrancy()
+                        blur(LiquidGlassLevel.UltraThin.blurRadius.toPx())
+                        lens(
+                            refractionHeight = LiquidGlassLevel.UltraThin.lensMin.toPx(),
+                            refractionAmount = LiquidGlassLevel.UltraThin.lensMax.toPx(),
+                            depthEffect = LiquidGlassLevel.UltraThin.depthEffect,
+                        )
+                    },
+                    highlight = { Highlight.Default.copy(alpha = if (selected) 0.38f else 0.18f) },
+                    innerShadow = { InnerShadow(radius = 2.dp, alpha = 0.08f) },
+                    layerBlock = {
+                        scaleX = scale
+                        scaleY = scale
+                        alpha = if (enabled) 1f else 0.45f
+                    },
+                    onDrawSurface = {
+                        if (selected) {
+                            drawRoundRect(containerColor, blendMode = BlendMode.Hue)
+                            drawRoundRect(containerColor.copy(alpha = 0.45f))
+                        } else {
+                            drawRoundRect(containerColor)
+                            if (borderColor != Color.Transparent) {
+                                drawRoundRect(borderColor, style = Stroke(1.dp.toPx()))
+                            }
+                        }
+                    },
+                )
+                .clickable(
+                    enabled = enabled,
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                )
+                .padding(horizontal = 12.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            CompositionLocalProvider(LocalContentColor provides contentColor) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (leadingIcon != null) {
+                        leadingIcon()
+                    } else if (selected) {
+                        Text("✓", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = contentColor)
+                    }
+                    label()
+                    trailingIcon?.invoke()
+                }
+            }
+        }
+    }
+}
+

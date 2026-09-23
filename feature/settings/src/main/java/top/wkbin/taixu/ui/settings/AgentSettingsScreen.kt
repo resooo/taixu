@@ -2,6 +2,7 @@ package top.wkbin.taixu.ui.settings
 
 import org.koin.compose.viewmodel.koinViewModel
 import top.wkbin.taixu.ui.components.RuntimeAlertDialog
+import top.wkbin.taixu.ui.components.RuntimeCircularProgressIndicator as CircularProgressIndicator
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -58,6 +60,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -89,8 +93,9 @@ fun AgentSettingsScreen(
     val thinkingAutoTranslate by viewModel.thinkingAutoTranslate.collectAsStateWithLifecycle()
     val customSystemPromptEnabled by viewModel.customSystemPromptEnabled.collectAsStateWithLifecycle()
     val customSystemPrompt by viewModel.customSystemPrompt.collectAsStateWithLifecycle()
+    val agentCharName by viewModel.agentCharName.collectAsStateWithLifecycle()
+    val agentUserName by viewModel.agentUserName.collectAsStateWithLifecycle()
     val compactionEnabled by viewModel.contextCompactionEnabled.collectAsStateWithLifecycle()
-    val compactionThreshold by viewModel.contextCompactionThreshold.collectAsStateWithLifecycle()
     val maxToolRounds by viewModel.maxToolRounds.collectAsStateWithLifecycle()
     val roundLimitAutoContinuations by viewModel.roundLimitAutoContinuations.collectAsStateWithLifecycle()
     val autoWorkspaceCwd by viewModel.autoWorkspaceCwd.collectAsStateWithLifecycle()
@@ -111,6 +116,12 @@ fun AgentSettingsScreen(
     val skillArchiveMessage by viewModel.skillArchiveMessage.collectAsStateWithLifecycle()
     val skillArchiveMessageIsError by viewModel.skillArchiveMessageIsError.collectAsStateWithLifecycle()
     val skillEvolutionSuggestions by viewModel.skillEvolutionSuggestions.collectAsStateWithLifecycle()
+    val marketSkills by viewModel.clawHubMarketSkills.collectAsStateWithLifecycle()
+    val isMarketLoading by viewModel.isMarketLoading.collectAsStateWithLifecycle()
+    val isMarketOfflinePreset by viewModel.isMarketOfflinePreset.collectAsStateWithLifecycle()
+    val pendingSkillInspection by viewModel.pendingSkillInspection.collectAsStateWithLifecycle()
+    val preparingSkillId by viewModel.preparingSkillId.collectAsStateWithLifecycle()
+    val isCommittingInstallation by viewModel.isCommittingInstallation.collectAsStateWithLifecycle()
 
     var showAddSkillDialog by remember { mutableStateOf(false) }
     var viewingSkillPrompt by remember { mutableStateOf<AgentSkill?>(null) }
@@ -119,6 +130,7 @@ fun AgentSettingsScreen(
     var deletingSubagent by remember { mutableStateOf<AgentSubagent?>(null) }
     var deletingSkill by remember { mutableStateOf<AgentSkill?>(null) }
     var subagentQuery by rememberSaveable { mutableStateOf("") }
+    var skillQuery by rememberSaveable { mutableStateOf("") }
     var expandedDepartmentIds by rememberSaveable { mutableStateOf(listOf<String>()) }
     val visibleSubagentGroups = remember(subagents, subagentQuery) {
         val query = subagentQuery.trim().lowercase()
@@ -131,7 +143,24 @@ fun AgentSettingsScreen(
             .entries
             .sortedBy { AgentDepartments.find(it.key).sortOrder }
     }
-    val skillArchivePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris -> if (uris.isNotEmpty()) viewModel.importSkillArchives(uris) }
+    val visibleSkills = remember(skills, skillQuery) {
+        val query = skillQuery.trim().lowercase()
+        if (query.isBlank()) {
+            skills
+        } else {
+            skills.filter { skill ->
+                skill.name.lowercase().contains(query) || skill.id.lowercase().contains(query) ||
+                    skill.description.lowercase().contains(query) || skill.category.lowercase().contains(query)
+            }
+        }
+    }
+    val skillArchivePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.size == 1) {
+            viewModel.inspectLocalSkillZip(uris.first())
+        } else if (uris.isNotEmpty()) {
+            viewModel.importSkillArchives(uris)
+        }
+    }
     val skillDirPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> if (uri != null) viewModel.importSkillsFromTree(uri) }
 
     Scaffold(
@@ -274,6 +303,10 @@ fun AgentSettingsScreen(
                     onEnabledChange = viewModel::setCustomSystemPromptEnabled,
                     prompt = customSystemPrompt,
                     onPromptChange = viewModel::setCustomSystemPrompt,
+                    charName = agentCharName,
+                    onCharNameChange = viewModel::setAgentCharName,
+                    userName = agentUserName,
+                    onUserNameChange = viewModel::setAgentUserName,
                 )
             }
 
@@ -292,16 +325,11 @@ fun AgentSettingsScreen(
                     AgentToggleRow(
                         icon = RuntimeIconName.Compress,
                         title = "开启上下文智能压缩 (Context Compaction)",
-                        subtitle = "多轮工具调用超出阈值时，自动压缩历史中间工具输出日志，保留任务首尾与关键状态",
+                        subtitle = "历史超过 Token 折叠线时自动生成结构化摘要，保留近期原文、任务状态与关键文件足迹",
                         checked = compactionEnabled,
                         onCheckedChange = viewModel::setContextCompactionEnabled,
                     )
                     if (compactionEnabled) {
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        ThresholdSliderRow(
-                            currentThreshold = compactionThreshold,
-                            onThresholdChange = viewModel::setContextCompactionThreshold,
-                        )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         ContextBudgetSliderRow(
                             currentValue = contextBudgetTokens,
@@ -503,13 +531,67 @@ fun AgentSettingsScreen(
                 }
             }
 
-            items(skills, key = { it.id }) { skill ->
+            item {
+                OutlinedTextField(
+                    value = skillQuery,
+                    onValueChange = { skillQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("搜索 Skill") },
+                    placeholder = { Text("名称、标识、分类或描述") },
+                    leadingIcon = { RuntimeIcon(RuntimeIconName.Search, Modifier.size(18.dp)) },
+                    singleLine = true,
+                )
+            }
+
+            items(visibleSkills, key = { it.id }) { skill ->
                 SkillCard(
                     skill = skill,
                     onToggle = { enabled -> viewModel.toggleSkill(skill.id, enabled) },
                     onViewPrompt = { viewingSkillPrompt = skill },
                     onDelete = if (!skill.isBuiltin) { { deletingSkill = skill } } else null,
                 )
+            }
+            if (visibleSkills.isEmpty()) {
+                item {
+                    Text(
+                        text = "没有匹配 \"${skillQuery.trim()}\" 的技能",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                        textAlign = TextAlign.Center,
+                    )
+                }
+            }
+
+            // ---- 模块 4.5：ClawHub 技能生态市场 ----
+            item {
+                SectionHeader(
+                    title = "ClawHub 技能生态市场",
+                    subtitle = if (isMarketOfflinePreset) {
+                        "离线精选模式：以下为内置精选生态包（远端市场暂未接入）；安装前仍由本地引擎执行静态安全与兼容性审查"
+                    } else {
+                        "精选社区标准生态技能包，下载前由本地引擎执行静态安全与兼容性审查"
+                    },
+                )
+            }
+
+            if (isMarketLoading && marketSkills.isEmpty()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                }
+            } else {
+                items(marketSkills, key = { "clawhub_" + it.id }) { marketItem ->
+                    ClawHubMarketSkillCard(
+                        item = marketItem,
+                        isPreparing = preparingSkillId == marketItem.id,
+                        onInstall = { viewModel.prepareInstallMarketSkill(marketItem.id) },
+                    )
+                }
             }
 
             // ---- 模块 5：Plugin 插件生态管理 ----
@@ -533,6 +615,15 @@ fun AgentSettingsScreen(
 
             item { Spacer(Modifier.height(16.dp)) }
         }
+    }
+
+    pendingSkillInspection?.let { inspection ->
+        top.wkbin.taixu.ui.settings.skill.SkillSecurityAuditDialog(
+            inspection = inspection,
+            isCommitting = isCommittingInstallation,
+            onConfirmInstall = viewModel::confirmSkillInstallation,
+            onDismiss = viewModel::dismissSkillInspection,
+        )
     }
 
     skillArchiveMessage?.let { message ->
@@ -660,6 +751,15 @@ fun AgentSettingsScreen(
             dismissButton = {
                 TextButton(onClick = { deletingSubagent = null }) { Text("取消") }
             },
+        )
+    }
+
+    pendingSkillInspection?.let { inspection ->
+        top.wkbin.taixu.ui.settings.skill.SkillSecurityAuditDialog(
+            inspection = inspection,
+            isCommitting = isCommittingInstallation,
+            onConfirmInstall = viewModel::confirmSkillInstallation,
+            onDismiss = viewModel::dismissSkillInspection,
         )
     }
 }
@@ -1040,45 +1140,6 @@ private fun AutoContinuationSliderRow(
 }
 
 @Composable
-private fun ThresholdSliderRow(
-    currentThreshold: Int,
-    onThresholdChange: (Int) -> Unit,
-) {
-    var sliderVal by remember(currentThreshold) { mutableFloatStateOf(currentThreshold.toFloat()) }
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("压缩触发阈值（用户轮次）", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-            Text(
-                "${sliderVal.toInt()} 轮",
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
-                color = MaterialTheme.colorScheme.primary,
-            )
-        }
-        Text(
-            "当会话历史超过该轮数时，启动智能剪裁，最近 4 轮保持无损",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Slider(
-            value = sliderVal,
-            onValueChange = { sliderVal = it },
-            onValueChangeFinished = { onThresholdChange(sliderVal.toInt()) },
-            valueRange = 5f..40f,
-            steps = 6,
-        )
-    }
-}
-
-@Composable
 private fun ContextBudgetSliderRow(
     currentValue: Int,
     declaredTokens: Int?,
@@ -1290,6 +1351,7 @@ private fun ConsecutiveFailuresSliderRow(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SkillCard(
     skill: AgentSkill,
@@ -1303,40 +1365,41 @@ private fun SkillCard(
         borderColor = if (skill.isEnabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant,
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Text(
+                    skill.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(4.dp),
                 ) {
-                    Text(skill.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                    Text(
+                        skill.category,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val cmd = skill.triggerCommand
+                if (cmd != null) {
                     Surface(
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                         shape = RoundedCornerShape(4.dp),
                     ) {
                         Text(
-                            skill.category,
-                            style = MaterialTheme.typography.labelSmall,
+                            cmd,
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.primary,
                         )
-                    }
-                    val cmd = skill.triggerCommand
-                    if (cmd != null) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            shape = RoundedCornerShape(4.dp),
-                        ) {
-                            Text(
-                                cmd,
-                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold),
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
                     }
                 }
             }
@@ -1389,6 +1452,114 @@ private fun SkillCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ClawHubMarketSkillCard(
+    item: top.wkbin.taixu.core.model.skill.ClawHubMarketItem,
+    isPreparing: Boolean,
+    onInstall: () -> Unit,
+) {
+    RuntimeCard(
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+        borderColor = MaterialTheme.colorScheme.outlineVariant,
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    item.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(4.dp),
+                ) {
+                    Text(
+                        item.category,
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(4.dp),
+                ) {
+                    Text(
+                        "v${item.version}",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+            }
+            Text(item.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "作者: ${item.author} · ★ ${item.stars}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                when {
+                    isPreparing -> {
+                        Button(
+                            onClick = {},
+                            enabled = false,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                CircularProgressIndicator(modifier = Modifier.size(12.dp), strokeWidth = 2.dp)
+                                Text("审查中…", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                    item.isInstalled -> {
+                        OutlinedButton(
+                            onClick = {},
+                            enabled = false,
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        ) {
+                            Text("已安装", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                    else -> {
+                        Button(
+                            onClick = onInstall,
+                            enabled = !isPreparing,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                RuntimeIcon(name = RuntimeIconName.Shield, modifier = Modifier.size(14.dp))
+                                Text("审查并安装", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PluginCard(
     plugin: AgentPlugin,
@@ -1405,12 +1576,27 @@ private fun PluginCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(plugin.name, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Text(
+                            plugin.name,
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
                         Text("v${plugin.version}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("作者: ${plugin.author}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "作者: ${plugin.author}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 Switch(
                     checked = plugin.isEnabled,
@@ -1425,14 +1611,44 @@ private fun PluginCard(
             Text(plugin.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             if (plugin.permissions.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("权限:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    plugin.permissions.forEach { perm ->
+                val visiblePermissions = plugin.permissions.take(4)
+                val hiddenCount = plugin.permissions.size - visiblePermissions.size
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        "权限:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    visiblePermissions.forEach { perm ->
                         Surface(
                             color = MaterialTheme.colorScheme.surfaceContainerHighest,
                             shape = RoundedCornerShape(4.dp),
                         ) {
-                            Text(perm, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                perm,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 140.dp).padding(horizontal = 4.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (hiddenCount > 0) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                            shape = RoundedCornerShape(4.dp),
+                        ) {
+                            Text(
+                                "等 ${plugin.permissions.size} 项权限",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
                 }
@@ -1663,6 +1879,10 @@ private fun SystemPromptCustomCard(
     onEnabledChange: (Boolean) -> Unit,
     prompt: String,
     onPromptChange: (String) -> Unit,
+    charName: String,
+    onCharNameChange: (String) -> Unit,
+    userName: String,
+    onUserNameChange: (String) -> Unit,
 ) {
     // 仅在首次进入时以持久化值初始化缓冲，避免 remember(prompt) 键在每次 Datastore 回写时重置输入；
     // 输入经 400ms 防抖后再写入 Datastore，避免每次按键都落盘
@@ -1674,8 +1894,57 @@ private fun SystemPromptCustomCard(
         }
     }
 
+    // 称呼输入同样走 400ms 防抖落盘；留空即回退默认值
+    var charNameBuffer by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(charName) }
+    androidx.compose.runtime.LaunchedEffect(charNameBuffer) {
+        if (charNameBuffer != charName) {
+            kotlinx.coroutines.delay(400)
+            onCharNameChange(charNameBuffer)
+        }
+    }
+    var userNameBuffer by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(userName) }
+    androidx.compose.runtime.LaunchedEffect(userNameBuffer) {
+        if (userNameBuffer != userName) {
+            kotlinx.coroutines.delay(400)
+            onUserNameChange(userNameBuffer)
+        }
+    }
+
+    var showDefaultPromptDialog by remember { mutableStateOf(false) }
+    var defaultPromptAsset by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val androidContext = androidx.compose.ui.platform.LocalContext.current
+    if (showDefaultPromptDialog) {
+        androidx.compose.runtime.LaunchedEffect(showDefaultPromptDialog) {
+            if (defaultPromptAsset.isBlank()) {
+                defaultPromptAsset = runCatching {
+                    androidContext.assets.open("prompts/system/core.md").bufferedReader().use { it.readText() }
+                }.getOrDefault("（默认系统提示词加载失败）")
+            }
+        }
+        RuntimeAlertDialog(
+            onDismissRequest = { showDefaultPromptDialog = false },
+            title = { Text("默认系统提示词 (core.md)", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text(
+                        defaultPromptAsset,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showDefaultPromptDialog = false }) { Text("知道了") }
+            },
+        )
+    }
+
     val defaultPromptTemplate = """
 You are a helpful and expert AI assistant called {{char}}, based on model {{model_name}}.
+
+## Persona
+- You refer to yourself as {{char}} in conversations.
+- You address the user as {{user}}.
 
 ## System & Device Context
 - Time: {{cur_datetime}}
@@ -1735,6 +2004,54 @@ You are a helpful and expert AI assistant called {{char}}, based on model {{mode
                     onCheckedChange = onEnabledChange,
                 )
             }
+
+            // 称呼配置独立于自定义提示词开关：默认提示词同样生效
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text("称呼与人设", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                TextButton(
+                    onClick = { showDefaultPromptDialog = true },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        RuntimeIcon(RuntimeIconName.Visibility, Modifier.size(12.dp))
+                        Text("查看默认系统提示词", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(
+                    value = charNameBuffer,
+                    onValueChange = { charNameBuffer = it },
+                    label = { Text("模型自称") },
+                    placeholder = { Text("太墟智枢") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+                OutlinedTextField(
+                    value = userNameBuffer,
+                    onValueChange = { userNameBuffer = it },
+                    label = { Text("对用户的称呼") },
+                    placeholder = { Text("用户") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                )
+            }
+
+            Text(
+                "修改后立即对所有对话生效（留空恢复默认）；自定义提示词中的 {{char}} / {{user}} 宏变量也将使用这两个值。",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             if (enabled) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

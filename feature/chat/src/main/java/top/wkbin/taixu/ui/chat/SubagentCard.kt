@@ -1,7 +1,13 @@
 package top.wkbin.taixu.ui.chat
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -73,6 +79,13 @@ fun SubagentCard(
 
     val isFinished = result != null
     val isSuccess = result?.success ?: true
+
+    val taskBranches = remember(subagentBranches, tasks) {
+        tasks.map { (taskName, role, _) -> matchSubagentBranch(subagentBranches, taskName, role) }
+    }
+    val doneCount = taskBranches.count { it != null && !it.isBusy && !it.faulted }
+    val failedCount = taskBranches.count { it?.faulted == true }
+    val hasProgress = taskBranches.any { it != null }
 
     val cardBorderColor = if (isFinished) {
         if (isSuccess) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
@@ -146,9 +159,22 @@ fun SubagentCard(
                         }
 
                         Text(
-                            stringResource(R.string.chat_subtask_count, tasks.size),
+                            text = if (hasProgress) {
+                                buildString {
+                                    append(stringResource(R.string.chat_subtask_progress, doneCount, tasks.size))
+                                    if (failedCount > 0) {
+                                        append(" · ")
+                                        append(stringResource(R.string.chat_subtask_failed_count, failedCount))
+                                    }
+                                }
+                            } else {
+                                stringResource(R.string.chat_subtask_count, tasks.size)
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = when {
+                                failedCount > 0 -> MaterialTheme.colorScheme.error
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                         )
                     }
                 }
@@ -167,7 +193,7 @@ fun SubagentCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                tasks.forEach { (taskName, role, _) ->
+                tasks.forEachIndexed { index, (taskName, role, _) ->
                     val roleKey = role.lowercase()
                     val (roleColor, roleIcon) = when (roleKey) {
                         "researcher" -> Color(0xFF3B82F6) to RuntimeIconName.File
@@ -184,10 +210,27 @@ fun SubagentCard(
                         else -> role
                     }
                     // 直接定位该任务对应的子智能体 lane（运行中也可打开看实时进展）
-                    val targetBranch = remember(subagentBranches, taskName, role) {
-                        matchSubagentBranch(subagentBranches, taskName, role)
-                    }
+                    val targetBranch = taskBranches[index]
                     val clickable = targetBranch != null && onOpenSubagent != null
+
+                    val statusColor = when {
+                        targetBranch == null -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                        targetBranch.faulted -> Color(0xFFEF4444)
+                        targetBranch.isBusy -> Color(0xFFF59E0B)
+                        else -> Color(0xFF10B981)
+                    }
+                    val pulseAlpha = if (targetBranch?.isBusy == true) {
+                        val transition = rememberInfiniteTransition(label = "subagent_task_pulse")
+                        transition.animateFloat(
+                            initialValue = 0.35f,
+                            targetValue = 1f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(durationMillis = 800, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse,
+                            ),
+                            label = "subagent_task_pulse_alpha",
+                        ).value
+                    } else 1f
 
                     Surface(
                         shape = RoundedCornerShape(6.dp),
@@ -210,6 +253,12 @@ fun SubagentCard(
                                 modifier = Modifier.weight(1f, fill = false),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(statusColor.copy(alpha = pulseAlpha)),
                             )
                             if (clickable) {
                                 RuntimeIcon(

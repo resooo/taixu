@@ -78,7 +78,7 @@ private fun legacyStringResource(source: String): Int? = when (source) {
         "不注入工具和提示词" -> R.string.settings_legacy_0056
         "关闭系统提示词和工具定义注入，仅发送用户消息（用于排查问题）" -> R.string.settings_legacy_0057
         "Agent 智能体管理" -> R.string.settings_legacy_0059
-        "思考流呈现、上下文压缩阈值与技能插件" -> R.string.settings_legacy_0060
+        "思考流呈现、上下文压缩策略与技能插件" -> R.string.settings_legacy_0060
         "工具与插件生态" -> R.string.settings_legacy_0061
         "插件与工具生态中心" -> R.string.settings_legacy_0062
         "一键安装 Claude Code、OpenClaw 等 AI CLI 与开发环境" -> R.string.settings_legacy_0063
@@ -238,7 +238,6 @@ private fun legacyStringResource(source: String): Int? = when (source) {
         "卸载" -> R.string.settings_text_0070
         "卸载工具" -> R.string.settings_text_0071
         "压缩策略" -> R.string.settings_text_0072
-        "压缩触发阈值（用户轮次）" -> R.string.settings_text_0073
         "参数（空格分隔）" -> R.string.settings_text_0074
         "可呼叫太墟 Agent 在 PRoot 沙箱内自主排查与自愈" -> R.string.settings_text_0075
         "可更新" -> R.string.settings_text_0076
@@ -260,7 +259,7 @@ private fun legacyStringResource(source: String): Int? = when (source) {
         "复制 JSON" -> R.string.settings_text_0092
         "复杂且可并行的任务将由主智能体自行决定是否派发" -> R.string.settings_text_0093
         "多沙箱并存与动态切换" -> R.string.settings_text_0094
-        "多轮工具调用超出阈值时，自动压缩历史中间工具输出日志，保留任务首尾与关键状态" -> R.string.settings_text_0095
+        "历史超过 Token 折叠线时自动生成结构化摘要，保留近期原文、任务状态与关键文件足迹" -> R.string.settings_text_0095
         "如: sqlite / github / fetch" -> R.string.settings_text_0096
         "安装" -> R.string.settings_text_0097
         "安装中" -> R.string.settings_text_0098
@@ -501,6 +500,15 @@ private fun legacyStringResource(source: String): Int? = when (source) {
         "防止复杂任务中模型陷入死循环；达到轮次后进入下方的自动续跑检查点" -> R.string.settings_text_0337
         "轮次用尽后自动续跑" -> R.string.settings_text_0338
         "轮次用尽即停下等待用户确认；适合希望逐段把关的场景" -> R.string.settings_text_0339
+        "称呼与人设" -> R.string.settings_text_0342
+        "查看默认系统提示词" -> R.string.settings_text_0343
+        "模型自称" -> R.string.settings_text_0344
+        "太墟智枢" -> R.string.settings_text_0345
+        "对用户的称呼" -> R.string.settings_text_0346
+        "用户" -> R.string.settings_text_0347
+        "修改后立即对所有对话生效（留空恢复默认）；自定义提示词中的 {{char}} / {{user}} 宏变量也将使用这两个值。" -> R.string.settings_text_0348
+        "默认系统提示词 (core.md)" -> R.string.settings_text_0349
+        "（默认系统提示词加载失败）" -> R.string.settings_text_0350
         ", target.sizeBytes.toDouble() / (1024 * 1024))} MB 空间）。/workspace 工作区中的代码文件不会受到任何影响。" -> R.string.settings_long_001
         "1. 分析上述 PRoot 沙箱内的失败报错（如 dpkg 依赖破损、锁残留、网络下载受阻、commandLinks 软链接缺失或环境缺失）；" -> R.string.settings_long_002
         "2. 直接调用 base 工具执行针对性的修复命令（如清理 /var/lib/dpkg 锁、dpkg --configure -a、apt-get --fix-broken install、手动从备用源拉取或补齐软链接）；" -> R.string.settings_long_003

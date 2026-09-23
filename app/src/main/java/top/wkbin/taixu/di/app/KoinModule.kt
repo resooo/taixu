@@ -80,6 +80,7 @@ import top.wkbin.taixu.harness.AgentForegroundLauncher
 import top.wkbin.taixu.harness.WorkspaceFileAccess
 import top.wkbin.taixu.harness.checkpoint.CheckpointStore
 import top.wkbin.taixu.harness.workflow.WorkflowScheduleDispatcher
+import top.wkbin.taixu.lifecycle.RuntimeLifecycleSupervisor
 import top.wkbin.taixu.runtime.LinuxRuntime
 import top.wkbin.taixu.runtime.pty.PtyManager
 import top.wkbin.taixu.runtime.service.LocalServiceLauncher
@@ -190,6 +191,8 @@ val appModule = module {
     factory<WebChatAgentGateway> { get<TaiXuWebChatAgentGateway>() }
 
     single<RuntimeServiceController> { RuntimeServiceController(context = get()) }
+
+    single<RuntimeLifecycleSupervisor> { RuntimeLifecycleSupervisor(context = get()) }
 
     factory<AgentForegroundLauncherImpl> { AgentForegroundLauncherImpl(context = get()) }
 

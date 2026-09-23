@@ -24,13 +24,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -58,6 +59,7 @@ import top.wkbin.taixu.ui.components.RuntimeCircularProgressIndicator
 import top.wkbin.taixu.ui.components.RuntimeIcon
 import top.wkbin.taixu.ui.components.RuntimeIconButton
 import top.wkbin.taixu.ui.components.RuntimeIconName
+import top.wkbin.taixu.ui.components.RuntimeLinearProgressIndicator
 import top.wkbin.taixu.ui.components.RuntimeTextButton
 
 /**
@@ -452,6 +454,31 @@ private fun NotARepoContent() {
 }
 
 // ----------------------------------------------------------------------
+// 仓库语义颜色辅助函数（深浅主题自适应，符合 MD3 对比度规范）
+// ----------------------------------------------------------------------
+
+@Composable
+private fun gitSuccessColor(): Color {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    return if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32)
+}
+
+@Composable
+private fun gitInfoColor(): Color {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    return if (isDark) Color(0xFF90CAF9) else Color(0xFF1976D2)
+}
+
+@Composable
+private fun gitWarningColor(): Color {
+    val isDark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    return if (isDark) Color(0xFFFFB74D) else Color(0xFFE65100)
+}
+
+@Composable
+private fun gitAiColor(): Color = MaterialTheme.colorScheme.tertiary
+
+// ----------------------------------------------------------------------
 // 仓库概览卡片：分支 + 领先落后 + 远程地址 + 推送/拉取
 // ----------------------------------------------------------------------
 
@@ -466,7 +493,7 @@ private fun RepoHeaderCard(
 ) {
     RuntimeCard(
         containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        contentPadding = PaddingValues(12.dp),
+        contentPadding = PaddingValues(14.dp),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 6.dp),
@@ -474,9 +501,13 @@ private fun RepoHeaderCard(
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                RuntimeIcon(RuntimeIconName.GitBranch, Modifier.size(17.dp), MaterialTheme.colorScheme.primary)
+                RuntimeIcon(
+                    name = RuntimeIconName.GitBranch,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.primary,
+                )
                 Text(
                     text = overview.currentBranch,
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace),
@@ -489,10 +520,10 @@ private fun RepoHeaderCard(
                 }
                 Spacer(Modifier.weight(1f))
                 if (overview.aheadCount > 0) {
-                    MiniBadge("↑${overview.aheadCount}", Color(0xFF2E9E5B))
+                    MiniBadge("↑${overview.aheadCount}", gitSuccessColor())
                 }
                 if (overview.behindCount > 0) {
-                    MiniBadge("↓${overview.behindCount}", Color(0xFF3F8FFF))
+                    MiniBadge("↓${overview.behindCount}", gitInfoColor())
                 }
                 if (overview.uncommittedChanges > 0 || overview.untrackedFiles > 0) {
                     MiniBadge(
@@ -500,7 +531,7 @@ private fun RepoHeaderCard(
                             R.string.fgit_dirty_count,
                             overview.uncommittedChanges + overview.untrackedFiles,
                         ),
-                        Color(0xFFB25E00),
+                        gitWarningColor(),
                     )
                 }
             }
@@ -532,14 +563,14 @@ private fun RepoHeaderCard(
                             overflow = TextOverflow.Ellipsis,
                         )
                         if (p.total > 0) {
-                            LinearProgressIndicator(
+                            RuntimeLinearProgressIndicator(
                                 progress = { (p.completed.toFloat() / p.total).coerceIn(0f, 1f) },
                                 modifier = Modifier.fillMaxWidth().height(4.dp),
                             )
                         } else {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
+                            RuntimeLinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
                         }
-                    } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
+                    } ?: RuntimeLinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
                 }
             }
 
@@ -548,7 +579,7 @@ private fun RepoHeaderCard(
                     icon = RuntimeIconName.Download,
                     label = stringResource(R.string.fgit_pull),
                     enabled = !busy && overview.remoteUrl.isNotBlank(),
-                    tint = Color(0xFF3F8FFF),
+                    tint = gitInfoColor(),
                     onClick = onPull,
                     modifier = Modifier.weight(1f),
                 )
@@ -556,7 +587,7 @@ private fun RepoHeaderCard(
                     icon = RuntimeIconName.ArrowUp,
                     label = stringResource(R.string.fgit_push),
                     enabled = !busy && overview.remoteUrl.isNotBlank(),
-                    tint = Color(0xFF2E9E5B),
+                    tint = gitSuccessColor(),
                     onClick = onPush,
                     modifier = Modifier.weight(1f),
                 )
@@ -579,7 +610,7 @@ private fun ActionChip(
         enabled = enabled,
         shape = RoundedCornerShape(10.dp),
         color = if (enabled) tint.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier,
+        modifier = modifier.minimumInteractiveComponentSize(),
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -609,9 +640,10 @@ private fun ShallowRepoCard(
     onUnshallow: () -> Unit,
 ) {
     val inProgress = busy && operation == GitOperation.UNSHALLOW
+    val warningColor = gitWarningColor()
     RuntimeCard(
-        containerColor = Color(0xFFB25E00).copy(alpha = 0.10f),
-        borderColor = Color(0xFFB25E00).copy(alpha = 0.4f),
+        containerColor = warningColor.copy(alpha = 0.10f),
+        borderColor = warningColor.copy(alpha = 0.4f),
         contentPadding = PaddingValues(12.dp),
         modifier = Modifier
             .fillMaxWidth()
@@ -622,26 +654,27 @@ private fun ShallowRepoCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                RuntimeIcon(RuntimeIconName.Info, Modifier.size(16.dp), Color(0xFFB25E00))
+                RuntimeIcon(RuntimeIconName.Info, Modifier.size(16.dp), warningColor)
                 Text(
                     text = stringResource(R.string.fgit_shallow_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFB25E00),
+                    color = warningColor,
                     modifier = Modifier.weight(1f),
                 )
                 Surface(
                     onClick = onUnshallow,
                     enabled = !busy,
-                    color = if (busy) MaterialTheme.colorScheme.surfaceContainerHigh else Color(0xFFB25E00).copy(alpha = 0.16f),
+                    color = if (busy) MaterialTheme.colorScheme.surfaceContainerHigh else warningColor.copy(alpha = 0.16f),
                     shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.minimumInteractiveComponentSize(),
                 ) {
                     Text(
                         text = stringResource(
                             if (inProgress) R.string.fgit_unshallow_running else R.string.fgit_unshallow,
                         ),
                         style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = if (busy) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFB25E00),
+                        color = if (busy) MaterialTheme.colorScheme.onSurfaceVariant else warningColor,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                     )
                 }
@@ -657,12 +690,12 @@ private fun ShallowRepoCard(
                         Text(
                             text = p.title,
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                            color = Color(0xFFB25E00),
+                            color = warningColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
+                    RuntimeLinearProgressIndicator(modifier = Modifier.fillMaxWidth().height(4.dp))
                 }
             }
         }
@@ -765,9 +798,9 @@ private fun BranchRow(
     val tint = if (branch.isCurrent) {
         MaterialTheme.colorScheme.primary
     } else if (branch.isRemote) {
-        Color(0xFF3F8FFF)
+        gitInfoColor()
     } else {
-        Color(0xFF7C4DFF)
+        MaterialTheme.colorScheme.tertiary
     }
     RuntimeCard(
         containerColor = if (branch.isCurrent) tint.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -939,7 +972,7 @@ private fun TagsTab(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        RuntimeIcon(RuntimeIconName.GitCommit, Modifier.size(17.dp), Color(0xFF2E9E5B))
+                        RuntimeIcon(RuntimeIconName.GitCommit, Modifier.size(17.dp), gitSuccessColor())
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 tag.name,
@@ -1088,34 +1121,38 @@ private fun ChangesTab(
                     if (state.operation == GitOperation.AI_MESSAGE) {
                         RuntimeCircularProgressIndicator(Modifier.size(22.dp))
                     } else {
+                        val aiColor = gitAiColor()
                         Surface(
                             onClick = onGenerateMessage,
                             enabled = !state.busy && state.changes.isNotEmpty(),
-                            color = Color(0xFF7C4DFF).copy(alpha = 0.12f),
+                            color = aiColor.copy(alpha = 0.12f),
                             shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.minimumInteractiveComponentSize(),
                         ) {
                             Row(
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                             ) {
-                                RuntimeIcon(RuntimeIconName.Sparkles, Modifier.size(15.dp), Color(0xFF7C4DFF))
+                                RuntimeIcon(RuntimeIconName.Sparkles, Modifier.size(15.dp), aiColor)
                                 Text(
                                     stringResource(R.string.fgit_ai_message),
                                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = Color(0xFF7C4DFF),
+                                    color = aiColor,
                                 )
                             }
                         }
                     }
                 }
+                val commitColor = gitSuccessColor()
+                val pushColor = gitInfoColor()
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Surface(
                         onClick = { onCommit(message) },
                         enabled = canCommit,
                         shape = RoundedCornerShape(10.dp),
-                        color = if (canCommit) Color(0xFF2E9E5B).copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHigh,
-                        modifier = Modifier.weight(1f),
+                        color = if (canCommit) commitColor.copy(alpha = 0.16f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.weight(1f).minimumInteractiveComponentSize(),
                     ) {
                         Text(
                             text = if (state.operation == GitOperation.COMMIT) {
@@ -1127,7 +1164,7 @@ private fun ChangesTab(
                                 )
                             },
                             style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                            color = if (canCommit) Color(0xFF2E9E5B) else MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (canCommit) commitColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             modifier = Modifier.padding(vertical = 10.dp),
                         )
@@ -1137,18 +1174,19 @@ private fun ChangesTab(
                         onClick = { onCommitAndPush(message) },
                         enabled = canCommit,
                         shape = RoundedCornerShape(10.dp),
-                        color = if (canCommit) Color(0xFF3F8FFF).copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        color = if (canCommit) pushColor.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceContainerHigh,
+                        modifier = Modifier.minimumInteractiveComponentSize(),
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            RuntimeIcon(RuntimeIconName.ArrowUp, Modifier.size(15.dp), if (canCommit) Color(0xFF3F8FFF) else MaterialTheme.colorScheme.onSurfaceVariant)
+                            RuntimeIcon(RuntimeIconName.ArrowUp, Modifier.size(15.dp), if (canCommit) pushColor else MaterialTheme.colorScheme.onSurfaceVariant)
                             Text(
                                 stringResource(R.string.fgit_commit_push),
                                 style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = if (canCommit) Color(0xFF3F8FFF) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = if (canCommit) pushColor else MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -1166,10 +1204,10 @@ private fun ChangeRow(
     onDiscard: () -> Unit,
 ) {
     val (typeLabel, typeTint) = when (change.changeType) {
-        GitManager.ChangeType.ADDED -> "新增" to Color(0xFF2E9E5B)
-        GitManager.ChangeType.MODIFIED -> "修改" to Color(0xFF3F8FFF)
+        GitManager.ChangeType.ADDED -> "新增" to gitSuccessColor()
+        GitManager.ChangeType.MODIFIED -> "修改" to gitInfoColor()
         GitManager.ChangeType.DELETED -> "删除" to MaterialTheme.colorScheme.error
-        GitManager.ChangeType.UNTRACKED -> "未跟踪" to Color(0xFFB25E00)
+        GitManager.ChangeType.UNTRACKED -> "未跟踪" to gitWarningColor()
         GitManager.ChangeType.CONFLICT -> "冲突" to MaterialTheme.colorScheme.error
     }
     RuntimeCard(

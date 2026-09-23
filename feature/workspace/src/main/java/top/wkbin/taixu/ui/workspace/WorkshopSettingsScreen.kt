@@ -99,8 +99,10 @@ fun WorkshopSettingsScreen(onBack: () -> Unit, onOpenEnvironment: () -> Unit, on
                     ProjectScriptBindingRow(
                         projectName = project.name,
                         projectType = project.projectType,
-                        scripts = scripts.filter { it.projectType == project.projectType.name },
-                        selectedId = bindings.firstOrNull { it.projectName == project.name }?.scriptId,
+                        scripts = scripts.filter { it.projectType == project.projectType.name && !it.isBuiltin },
+                        selectedId = bindings.firstOrNull { it.projectName == project.name }?.scriptId?.takeIf { id ->
+                            scripts.any { it.id == id && !it.isBuiltin }
+                        },
                         onSelect = { viewModel.bindProject(project.name, it) },
                     )
                 }
@@ -201,8 +203,8 @@ private fun ProjectScriptBindingRow(projectName: String, projectType: ProjectTyp
 
 @Composable
 private fun ManagedScriptEditorDialog(script: BuildScriptEntity?, onDismiss: () -> Unit, onSave: (String, String, ProjectType, String) -> Unit) {
-    val defaultAndroidTemplate = "#!/bin/sh\nset -eu\nPROJECT_DIR=\"\${1:-.}\"\nTASK=\"\${2:-assembleDebug}\"\ncd \"\$PROJECT_DIR\"\nif [ -f ./gradlew ]; then\n    chmod +x ./gradlew\n    ./gradlew \"\$TASK\" --no-daemon --max-workers=2\nelif command -v gradle >/dev/null 2>&1; then\n    gradle \"\$TASK\" --no-daemon --max-workers=2\nelif [ -x /opt/taixu/bin/gradle ]; then\n    /opt/taixu/bin/gradle \"\$TASK\" --no-daemon --max-workers=2\nelse\n    echo '未找到可用的 Gradle 环境，请检查是否已安装 Android 基础套件' >&2\n    exit 127\nfi\n"
-    val defaultFlutterTemplate = "#!/bin/sh\nset -eu\nPROJECT_DIR=\"\${1:-.}\"\nTARGET=\"\${2:-apk --debug}\"\ncd \"\$PROJECT_DIR\"\nflutter pub get\nflutter build \$TARGET\n"
+    val defaultAndroidTemplate = "#!/bin/sh\n# 太墟标准 Android 构建脚本入口\nset -eu\nPROJECT_DIR=\"\${1:-.}\"\nTASK=\"\${2:-assembleDebug}\"\nexec /bin/sh /opt/taixu/scripts/taixu-build.sh android \"\$PROJECT_DIR\" \"\$TASK\"\n"
+    val defaultFlutterTemplate = "#!/bin/sh\n# 太墟标准 Flutter 构建脚本入口\nset -eu\nPROJECT_DIR=\"\${1:-.}\"\nTARGET=\"\${2:-apk --debug --target-platform android-arm64}\"\nexec /bin/sh /opt/taixu/scripts/taixu-build.sh flutter \"\$PROJECT_DIR\" \$TARGET\n"
     var name by remember(script) { mutableStateOf(script?.name.orEmpty()) }
     var description by remember(script) { mutableStateOf(script?.description.orEmpty()) }
     var type by remember(script) { mutableStateOf(runCatching { ProjectType.valueOf(script?.projectType ?: ProjectType.ANDROID.name) }.getOrDefault(ProjectType.ANDROID)) }

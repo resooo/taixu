@@ -51,6 +51,10 @@ class LinuxMcpStdioChannel(
     init {
         scope.launch {
             val buf = StringBuilder()
+            var skippingOversized = false
+            // 同一段连续超长输出只广播一条熔断错误帧：首帧已能触发在途请求失败，
+            // 若每条超长行都发帧，会被协议层连续计数放大为通道级中毒断连
+            var reportedOversizedFrame = false
             try {
                 session.output.collect { output ->
                     val chunk = output.text
@@ -58,14 +62,39 @@ class LinuxMcpStdioChannel(
                     while (start < chunk.length) {
                         val newline = chunk.indexOf('\n', start)
                         val end = if (newline >= 0) newline else chunk.length
+                        if (skippingOversized) {
+                            if (newline >= 0) {
+                                skippingOversized = false
+                                start = newline + 1
+                            } else {
+                                break
+                            }
+                            continue
+                        }
                         val partLength = end - start
                         if (buf.length + partLength > maxFrameChars) {
-                            throw IllegalStateException("MCP STDIO frame is too large")
+                            skippingOversized = true
+                            if (!reportedOversizedFrame) {
+                                val idJson = ID_REGEX.find(buf)?.groups?.get(1)?.value ?: "null"
+                                reportedOversizedFrame = true
+                                lines.send(
+                                    """{"jsonrpc":"2.0","id":$idJson,"error":{"code":-32603,"message":"MCP STDIO 单行输出超过安全上限 (${maxFrameChars / 1024 / 1024}MB)，已触发移动端熔断保护"}}""",
+                                )
+                            }
+                            buf.clear()
+                            if (newline >= 0) {
+                                skippingOversized = false
+                                start = newline + 1
+                            } else {
+                                break
+                            }
+                            continue
                         }
                         buf.append(chunk, start, end)
                         if (newline < 0) break
                         val line = buf.toString().trim()
                         buf.clear()
+                        reportedOversizedFrame = false
                         if (line.startsWith("{")) lines.send(line)
                         start = newline + 1
                     }
@@ -86,5 +115,9 @@ class LinuxMcpStdioChannel(
         // 此时 output flow 的完成永远观察不到，协程与 Channel 永久泄漏。取消 scope 让泵
         // 走 catch 分支收尾（lines.close(cause)）。
         scope.cancel()
+    }
+
+    private companion object {
+        private val ID_REGEX = Regex(""""id"\s*:\s*("([^"]+)"|(\d+))""")
     }
 }

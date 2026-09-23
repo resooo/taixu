@@ -22,8 +22,6 @@
 | **工作流定义、调度语义与安全边界** | [`docs/WORKFLOW.md`](WORKFLOW.md) | DAG 模型、并发调度、审批、执行器、入口与当前能力边界 |
 | **已知问题与避坑指南** | [`docs/KNOWN_ISSUES.md`](KNOWN_ISSUES.md) | PRoot 沙箱环境已知限制、架构设计历史考量与规避方案 |
 | **存储分类与清理边界** | [`docs/STORAGE_MANAGEMENT.md`](STORAGE_MANAGEMENT.md) | 六类空间归属、清理计划、运行时互斥与后续管理建议 |
-| **DeepSeek-Reasonix 对标分析与借鉴清单** | [`docs/REASONIX_BORROWING_ANALYSIS.md`](REASONIX_BORROWING_ANALYSIS.md) | prefix-cache 稳定性缺口（摘要请求/动态注入/MCP 代理）、子代理 claim 裁定、审批粒度、记忆召回 BM25 与落地优先级 |
-| **Harness 对标分析与演进规划 (RikkaHub × Pi)** | [`docs/RIKKAHUB_BORROWING_ANALYSIS.md`](RIKKAHUB_BORROWING_ANALYSIS.md) | 分级容错编辑 TextReplacers、Claude 4 缓存断点、沙箱视觉直通、Pi ToolOutput Sink、Tail 截断、LMK 崩溃事务恢复、Split-Turn 压缩 |
 
 ---
 

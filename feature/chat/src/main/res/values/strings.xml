@@ -27,6 +27,8 @@
     <string name="chat_interrupted">执行中断</string>
     <string name="chat_parallel_running">并行执行中</string>
     <string name="chat_subtask_count">%1$d 个子任务并发调度</string>
+    <string name="chat_subtask_progress">已完成 %1$d/%2$d</string>
+    <string name="chat_subtask_failed_count">%1$d 个失败</string>
     <string name="chat_execution_summary">执行汇总与产出</string>
     <string name="chat_subagent_running">子智能体正在沙箱中执行工具并分析结果，完成后将在此汇总展示…</string>
     <string name="chat_approval_request">请求批准</string>
@@ -270,6 +272,8 @@
     <string name="chat_subagent_loading">正在读取子智能体成果…</string>
     <string name="chat_subagent_task">调研任务</string>
     <string name="chat_subagent_final_result">最终成果</string>
+    <string name="chat_subagent_partial_result">最后进展（任务未正常收场）</string>
+    <string name="chat_subagent_partial_hint">该子任务超时或异常中断，以下是中断前的工作状态，不是最终结论。</string>
     <string name="chat_subagent_no_result">该子智能体没有生成可展示的文本结论。</string>
     <string name="chat_subagent_pending">子智能体仍在执行，完成后可点“刷新成果”查看最终结论。</string>
     <string name="chat_subagent_process">调研过程 · %1$d 条记录 · %2$d 次工具调用</string>

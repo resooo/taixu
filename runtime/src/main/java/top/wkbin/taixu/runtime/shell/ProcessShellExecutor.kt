@@ -136,7 +136,7 @@ class ProcessShellExecutor(
                 }
             }
             buildString {
-                append(kept.toByteArray().toString(Charsets.UTF_8))
+                append(kept.toString(Charsets.UTF_8.name()))
                 if (totalBytes > kept.size()) {
                     append("\n\n[进程输出已截断：共 ")
                     append(totalBytes)
@@ -160,7 +160,7 @@ class ProcessShellExecutor(
     private companion object {
         const val TIMEOUT_EXIT_CODE = 124
         const val PROCESS_TEARDOWN_TIMEOUT_MS = 1_000L
-        const val MAX_CAPTURE_BYTES = 4 * 1024 * 1024
+        const val MAX_CAPTURE_BYTES = 2 * 1024 * 1024
         const val READ_BUFFER_BYTES = 16 * 1024
 
         /** onOutput 连续抛异常达到该次数后停用流式回调，仅保留排水与完整输出捕获。 */

@@ -10,10 +10,8 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.IBinder
-import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -27,6 +25,8 @@ import kotlinx.coroutines.launch
 import top.wkbin.taixu.R
 import top.wkbin.taixu.core.model.workflow.WorkflowRunStatus
 import top.wkbin.taixu.harness.workflow.WorkflowRunManager
+import top.wkbin.taixu.lifecycle.ProcessingPowerLease
+import top.wkbin.taixu.lifecycle.RuntimeLifecycleSupervisor
 
 /**
  * 工作流后台执行前台服务：任意工作流运行时保活（dataSync + WakeLock/WifiLock），
@@ -36,11 +36,12 @@ import top.wkbin.taixu.harness.workflow.WorkflowRunManager
 class WorkflowForegroundService : Service() {
 
     val runManager: WorkflowRunManager by inject()
+    val lifeCycleSupervisor: RuntimeLifecycleSupervisor by inject()
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var collecting = false
-    private var processLock: PowerManager.WakeLock? = null
-    private var wifiLock: WifiManager.WifiLock? = null
+    /** 当前向 RuntimeLifecycleSupervisor 持有的保活租约（工作流运行时持有）。 */
+    private var powerLease: ProcessingPowerLease? = null
     /** 出现过运行中状态的 executionId：用于检测"运行中 → 终态"迁移，终态通知只发一次。 */
     private val seenRunning = mutableSetOf<String>()
     /** 进度通知节流：executionId → 上次发布时间。 */
@@ -86,7 +87,7 @@ class WorkflowForegroundService : Service() {
             }
             else -> {
                 safeStartForeground(NOTIFICATION_ID, runningNotification())
-                acquireLocks()
+                acquireLease()
                 if (!collecting) {
                     collecting = true
                     serviceScope.launch {
@@ -101,11 +102,11 @@ class WorkflowForegroundService : Service() {
                                 }
                             }
                             if (active.isEmpty()) {
-                                releaseLocks()
+                                releaseLease()
                                 stopForegroundSafely(STOP_FOREGROUND_DETACH)
                                 stopSelf()
                             } else {
-                                acquireLocks()
+                                acquireLease()
                                 active.forEach { state ->
                                     seenRunning.add(state.executionId)
                                     // bash 节点的流式日志每 ~300ms 刷新一次 state，
@@ -139,10 +140,25 @@ class WorkflowForegroundService : Service() {
     }
 
     override fun onDestroy() {
-        releaseLocks()
+        releaseLease()
         serviceScope.cancel()
         super.onDestroy()
     }
+
+    /** 向 [RuntimeLifecycleSupervisor] 申请租约（幂等，已持有时跳过）。 */
+    private fun acquireLease() {
+        if (powerLease != null) return
+        powerLease = lifeCycleSupervisor.acquireLease(LEASE_HOLDER_ID)
+        Log.i(TAG, "Acquired power lease from RuntimeLifecycleSupervisor")
+    }
+
+    /** 释放租约；幂等，安全多次调用。 */
+    private fun releaseLease() {
+        powerLease?.close()
+        powerLease = null
+        Log.i(TAG, "Released power lease from RuntimeLifecycleSupervisor")
+    }
+
 
     private fun openRunIntent(executionId: String?): PendingIntent {
         val intent = Intent(this, top.wkbin.taixu.MainActivity::class.java)
@@ -220,31 +236,6 @@ class WorkflowForegroundService : Service() {
             .build()
     }
 
-    private fun acquireLocks() {
-        if (processLock?.isHeld != true) {
-            runCatching {
-                processLock = getSystemService(PowerManager::class.java)
-                    .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG)
-                    .also { it.acquire(LOCK_TIMEOUT_MS) }
-            }.onFailure { Log.w(TAG, "获取 CPU 唤醒锁失败", it) }
-        }
-        if (wifiLock?.isHeld != true) {
-            runCatching {
-                @Suppress("DEPRECATION")
-                wifiLock = getSystemService(WifiManager::class.java)
-                    .createWifiLock(WifiManager.WIFI_MODE_FULL, WIFI_LOCK_TAG)
-                    .also { it.acquire() }
-            }.onFailure { Log.w(TAG, "获取 Wi-Fi 锁失败", it) }
-        }
-    }
-
-    private fun releaseLocks() {
-        runCatching { processLock?.takeIf { it.isHeld }?.release() }.onFailure { Log.w(TAG, "释放 CPU 唤醒锁失败", it) }
-        processLock = null
-        runCatching { wifiLock?.takeIf { it.isHeld }?.release() }.onFailure { Log.w(TAG, "释放 Wi-Fi 锁失败", it) }
-        wifiLock = null
-    }
-
     private fun safeStartForeground(id: Int, notification: Notification) {
         runCatching { startForeground(id, notification) }
             .onFailure { Log.w(TAG, "startForeground 失败", it) }
@@ -273,9 +264,7 @@ class WorkflowForegroundService : Service() {
         private const val NOTIFICATION_ID = 30_001
         private const val PROGRESS_INTERVAL_MS = 2_000L
         private const val TAG = "WorkflowFgService"
-        private const val WAKE_LOCK_TAG = "taixu:workflow-execution"
-        private const val WIFI_LOCK_TAG = "taixu:workflow-wifi"
-        private const val LOCK_TIMEOUT_MS = 4 * 60 * 60 * 1000L
+        private const val LEASE_HOLDER_ID = "workflow"
         private val ACTIVE_NODE_STATUSES = setOf(
             top.wkbin.taixu.core.model.workflow.NodeRunStatus.RUNNING,
             top.wkbin.taixu.core.model.workflow.NodeRunStatus.STREAMING,

@@ -84,6 +84,10 @@ class SystemPromptBuilder(
         val pkgManager = DistroCatalog.packageManagerCommand(distroId)
         val customPromptEnabled = runCatching { settingsDataStore.customSystemPromptEnabled.first() }.getOrDefault(false)
         val customPrompt = runCatching { settingsDataStore.customSystemPrompt.first() }.getOrDefault("")
+        val agentCharName = runCatching { settingsDataStore.agentCharName.first() }
+            .getOrDefault(top.wkbin.taixu.core.datastore.SettingsDataStore.DEFAULT_AGENT_CHAR_NAME)
+        val agentUserName = runCatching { settingsDataStore.agentUserName.first() }
+            .getOrDefault(top.wkbin.taixu.core.datastore.SettingsDataStore.DEFAULT_AGENT_USER_NAME)
         val providerModelId = runCatching { settingsDataStore.providerModel.first() }.getOrDefault("")
 
         val allSkills = runCatching { skillRepository.allSkills.first() }.getOrDefault(emptyList())
@@ -220,8 +224,8 @@ class SystemPromptBuilder(
                 context = context,
                 modelId = providerModelId,
                 modelName = providerModelId,
-                charName = "太墟智枢",
-                userName = "用户",
+                charName = agentCharName,
+                userName = agentUserName,
             )
             mapOf(
                 "DISTRO_NAME" to distroName,
@@ -234,12 +238,19 @@ class SystemPromptBuilder(
             promptAssets.render(
                 "prompts/system/core.md",
                 mapOf(
+                    "CHAR_NAME" to agentCharName,
                     "DISTRO_NAME" to distroName,
                     "PKG_MANAGER" to pkgManager,
                     "ACTIVE_SKILLS" to skillSection,
                 ),
             )
         }
+        // 用户在设置中自定义了「对用户的称呼」时，向默认提示词追加称呼约定；
+        // 自定义提示词分支由 {{user}}/{{nickname}} 宏承载，无需重复注入。
+        val userAddressSection =
+            if (!customPromptEnabled && agentUserName != top.wkbin.taixu.core.datastore.SettingsDataStore.DEFAULT_AGENT_USER_NAME) {
+                "称呼约定：请使用「$agentUserName」称呼当前对话的用户。"
+            } else ""
 
         // 技能目录兜底注入：自定义系统提示（customSystemPrompt）通常不含 {{ACTIVE_SKILLS}} 占位符，
         // 这会让整份技能目录凭空消失 —— 而目录是模型自主匹配技能的唯一入口，丢失后
@@ -267,6 +278,7 @@ class SystemPromptBuilder(
 
         val sections = listOf(
             basePrompt,
+            userAddressSection,
             skillSectionFallback,
             toolsSection,
             prootSection,

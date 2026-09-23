@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import top.wkbin.taixu.ui.components.RuntimeButton as Button
@@ -75,7 +76,12 @@ internal fun EditAndResendDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.chat_edit_resend), fontWeight = FontWeight.Bold) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -373,22 +379,28 @@ internal fun RenameSessionDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.chat_rename_session), fontWeight = FontWeight.Bold) },
         text = {
-            OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                label = { Text(stringResource(R.string.chat_title_label)) },
-                singleLine = true,
-                isError = titleBlank,
-                supportingText = {
-                    if (titleBlank) {
-                        Text(
-                            stringResource(R.string.chat_title_required),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it },
+                    label = { Text(stringResource(R.string.chat_title_label)) },
+                    singleLine = true,
+                    isError = titleBlank,
+                    supportingText = {
+                        if (titleBlank) {
+                            Text(
+                                stringResource(R.string.chat_title_required),
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         },
         confirmButton = {
             TextButton(

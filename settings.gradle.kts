@@ -1,4 +1,5 @@
 pluginManagement {
+    includeBuild("build-logic")
     // CI（GitHub Actions 自动注入 CI=true）在海外，阿里云镜像同步滞后且访问慢；
     // 本地开发亦可通过 -PuseOfficialRepos=true 或 USE_OFFICIAL_REPOS=true 强制走官方源。
     val useOfficialRepos = System.getenv("CI") == "true" ||
@@ -96,3 +97,4 @@ include(":core:browser")
 include(":runtime:browser")
 include(":feature:browser")
 include(":feature:git")
+include(":feature:preview")
