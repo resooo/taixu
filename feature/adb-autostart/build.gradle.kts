@@ -1,39 +1,19 @@
 plugins {
-    alias(libs.plugins.android.library)
-    alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.kotlin.compose)
+    // 上游 v0.18.0 起改用 Convention Plugin 统一配置：
+    // 该插件已自动提供 core:common / core:model / feature:components /
+    // Compose UI / lifecycle-runtime-compose / koin-compose / coroutines。
+    alias(libs.plugins.taixu.android.feature)
 }
 
 android {
     namespace = "top.wkbin.taixu.feature.adbautostart"
     resourcePrefix = "adb_autostart_"
-    compileSdk = 37
-    defaultConfig { minSdk = 29 }
-    buildFeatures { compose = true }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-}
-
-kotlin {
-    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }
 
 dependencies {
-    implementation(project(":core:common"))
-    implementation(project(":core:model"))
+    // 本模块额外需要的依赖（其余由 Convention Plugin 提供）
     implementation(project(":core:datastore"))
-    implementation(libs.androidx.datastore.preferences)
     implementation(project(":runtime"))
-    implementation(project(":feature:components"))
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.koin.compose.viewmodel)
-    implementation(libs.koin.android)
-    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.datastore.preferences)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
